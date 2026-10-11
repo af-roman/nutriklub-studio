@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="page-head">
+  <p class="eyebrow">Plan · {{ year }}</p>
+  <div class="head-row">
+    <h1>Ledger</h1>
+  </div>
+</section>
+
+<section class="filters">
+  <div class="chips">
+    <a class="{% if status == 'all' %}is-on{% endif %}" href="/?year={{ year }}&view=list&when={{ when }}&activity_type={{ activity_type }}&q={{ query }}&shop={{ shop }}">All</a>
+    {% for key, label in STATUSES.items() %}
+      <a class="{% if status == key %}is-on{% endif %}" href="/?year={{ year }}&view=list&status={{ key }}&when={{ when }}&activity_type={{ activity_type }}&q={{ query }}&shop={{ shop }}">{{ label }} ({{ counts[key] }})</a>
+    {% endfor %}
+  </div>
+  <div class="chips">
+    <a class="{% if when == 'all' %}is-on{% endif %}" href="/?year={{ year }}&view=list&status={{ status }}&activity_type={{ activity_type }}&q={{ query }}&shop={{ shop }}">All dates</a>
+    <a class="{% if when == 'upcoming' %}is-on{% endif %}" href="/?year={{ year }}&view=list&status={{ status }}&when=upcoming&activity_type={{ activity_type }}&q={{ query }}&shop={{ shop }}">Upcoming</a>
+    <a class="{% if when == 'past' %}is-on{% endif %}" href="/?year={{ year }}&view=list&status={{ status }}&when=past&activity_type={{ activity_type }}&q={{ query }}&shop={{ shop }}">Past</a>
+  </div>
+  <form class="search" method="get" action="/">
+    <input type="hidden" name="view" value="list">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="when" value="{{ when }}">
+    <input type="hidden" name="shop" value="{{ shop }}">
+    <label class="sr" for="q">Search</label>
+    <input id="q" type="search" name="q" value="{{ query }}" placeholder="Search names or codes">
+    <label class="sr" for="activity_type">Type</label>
+    <select id="activity_type" name="activity_type">
+      <option value="all" {% if activity_type == 'all' %}selected{% endif %}>All types</option>
+      {% for key, label in TYPES.items() %}
+        <option value="{{ key }}" {% if activity_type == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <button class="button secondary" type="submit">Apply</button>
+  </form>
+</section>
+
+{% if groups %}
+<table class="ledger-table">
+  <thead>
+    <tr>
+      <th>Activity</th>
+      <th>Type</th>
+      <th>Shops</th>
+      <th>Dates</th>
+      <th>Status</th>
+      <th>Codes and reading</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for group in groups %}
+      <tr class="month-band">
+        <td colspan="6">{{ group.label }} · {{ group.count }}</td>
+      </tr>
+      {% for item in group["items"] %}
+      <tr>
+        <td>
+          <a class="row-title" href="{{ item.href }}">{{ item.name }}</a>
+          {% if item.notes %}
+            <p class="fine">{{ item.notes }}</p>
+          {% endif %}
+        </td>
+        <td>{{ item.type_label }}</td>
+        <td><span class="shop-pill shop-{{ item.shops }}">{{ item.shop_label }}</span></td>
+        <td class="mono">{{ item.dates }}</td>
+        <td><span class="badge badge-{{ item.status }}">{{ item.status_label }}</span></td>
+        <td>
+          {% if item["keys"] %}
+            <span class="mono">{{ item["keys"] | join(" · ") }}</span>
+          {% else %}
+            <span class="fine">No code yet</span>
+          {% endif %}
+          {% if item.reading %}
+            <p class="fine">{{ item.reading }}</p>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="quiet">No activities match.</p>
+{% endif %}
+{% endblock %}

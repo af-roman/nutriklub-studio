@@ -1,0 +1,335 @@
+<dialog class="activity-modal" id="activity-modal">
+  <div class="modal-panel" role="document">
+    <header class="modal-head">
+      <div class="title-line">
+        <h1>{{ modal.form.name or "New activity" }}</h1>
+        {% if modal.activity %}
+          <span class="badge badge-{{ modal.activity.status }}">{{ modal.activity.status_label }}</span>
+          <span class="shop-pill shop-{{ modal.activity.shops }}">{{ modal.activity.shop_label }}</span>
+        {% endif %}
+      </div>
+      <div class="head-actions">
+        {% if modal.activity %}
+          <form method="post" action="/activities/{{ modal.activity.id }}/duplicate">
+            <input type="hidden" name="return_view" value="{{ view }}">
+            <input type="hidden" name="return_shop" value="{{ shop }}">
+            <button class="button secondary" type="submit">Duplicate as draft</button>
+          </form>
+          <button class="button" type="submit" form="activity-form">Save changes</button>
+        {% endif %}
+        <a class="text-link" href="{{ close_href }}">Close</a>
+      </div>
+    </header>
+
+    <div class="activity-layout modal-body">
+      <div>
+        {% if modal.error %}
+          <p class="note" role="alert">{{ modal.error }}</p>
+        {% endif %}
+        <form id="activity-form" method="post" action="{% if modal.activity %}/activities/{{ modal.activity.id }}{% else %}/activities{% endif %}">
+          <input type="hidden" name="year" value="{{ year }}">
+          <input type="hidden" name="return_view" value="{{ view }}">
+          <input type="hidden" name="return_shop" value="{{ shop }}">
+          <section class="sheet">
+            <p class="kicker">Activity</p>
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" value="{{ modal.form.name }}" required maxlength="200">
+
+            <div class="split">
+              <div>
+                <label for="activity_type">Type</label>
+                <select id="activity_type" name="activity_type">
+                  {% for key, label in TYPES.items() %}
+                    <option value="{{ key }}" {% if modal.form.activity_type == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="status">Status</label>
+                <select id="status" name="status">
+                  {% for key, label in STATUSES.items() %}
+                    <option value="{{ key }}" {% if modal.form.status == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+
+            <label for="shops">Shops</label>
+            <select id="shops" name="shops">
+              {% for key, label in SHOPS.items() %}
+                <option value="{{ key }}" {% if modal.form.shops == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <p class="fine">Most activities run on both shops. Choose one shop when this activity differs, or runs on only one of them.</p>
+
+            <div class="split">
+              <div>
+                <label for="start_date">Start date</label>
+                <input id="start_date" name="start_date" type="date" value="{{ modal.form.start_date }}" required>
+              </div>
+              <div>
+                <label for="end_date">End date</label>
+                <input id="end_date" name="end_date" type="date" value="{{ modal.form.end_date }}" required>
+              </div>
+            </div>
+
+            <label for="notes">Intent</label>
+            <textarea id="notes" name="notes" rows="4" maxlength="5000" placeholder="What this activity is for">{{ modal.form.notes }}</textarea>
+          </section>
+
+          <section class="sheet">
+            <p class="kicker">Offer detail</p>
+            <p class="fine">Optional tracking for how the discount is set up.</p>
+            <div class="split">
+              <div>
+                <label for="discount_kind">Discount kind</label>
+                <select id="discount_kind" name="discount_kind">
+                  {% for key, label in DISCOUNT_KINDS.items() %}
+                    <option value="{{ key }}" {% if modal.form.discount_kind == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="discount_value">Amount or rate</label>
+                <input id="discount_value" name="discount_value" type="text" value="{{ modal.form.discount_value }}" maxlength="80" placeholder="15%, 50 CZK, Buy 2 get 1">
+              </div>
+            </div>
+            <label for="product_scope">Product range note</label>
+            <textarea id="product_scope" name="product_scope" rows="2" maxlength="2000" placeholder="Category or brand note, if not picking SKUs below">{{ modal.form.product_scope }}</textarea>
+
+            <div class="catalog-picker">
+              <p class="fine">
+                {% if modal.catalog %}
+                  Tick catalog SKUs for this activity. The Merchant Center checklist uses them for predicates.
+                {% else %}
+                  No catalog yet. <a href="/settings">Import products in Settings</a> to pick SKUs here.
+                {% endif %}
+              </p>
+              {% if modal.catalog %}
+                <input type="search" class="catalog-filter" placeholder="Filter products" data-catalog-filter aria-label="Filter products">
+                <div class="catalog-list" data-catalog-list>
+                  {% set selected = modal.form.scope_skus or [] %}
+                  {% for item in modal.catalog %}
+                    <label class="catalog-item" data-search="{{ (item.sku ~ ' ' ~ item.name ~ ' ' ~ item.product_key ~ ' ' ~ item.categories) | lower }}">
+                      <input type="checkbox" name="scope_sku" value="{{ item.sku }}" {% if item.sku in selected %}checked{% endif %}>
+                      <span>
+                        <span class="mono">{{ item.sku }}</span>
+                        <span class="fine">{{ item.name or item.product_key or '—' }} · {{ SHOP_SHORT[item.shops] }}</span>
+                      </span>
+                    </label>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+
+            <div class="split">
+              <div>
+                <label for="code_required">Discount code</label>
+                <select id="code_required" name="code_required">
+                  {% for key, label in CODE_REQUIRED.items() %}
+                    <option value="{{ key }}" {% if modal.form.code_required == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label for="audience">Who can use it</label>
+                <select id="audience" name="audience">
+                  {% for key, label in AUDIENCES.items() %}
+                    <option value="{{ key }}" {% if modal.form.audience == key %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <details class="sheet" {% if modal.form.match_keys or modal.form.baseline_start or modal.form.discount_value or modal.form.product_scope %}open{% endif %}>
+            <summary>Measurement</summary>
+            <p class="fine">Optional. Add these when you know how the activity will show up on an order. A draft can be saved without them.</p>
+            <div class="split">
+              <div>
+                <label for="baseline_start">Baseline start</label>
+                <input id="baseline_start" name="baseline_start" type="date" value="{{ modal.form.baseline_start }}">
+              </div>
+              <div>
+                <label for="baseline_end">Baseline end</label>
+                <input id="baseline_end" name="baseline_end" type="date" value="{{ modal.form.baseline_end }}">
+              </div>
+            </div>
+            <label for="match_keys">Promo codes or names</label>
+            <textarea id="match_keys" name="match_keys" rows="3" placeholder="One code per line">{{ modal.form.match_keys }}</textarea>
+          </details>
+
+          {% if not modal.activity %}
+            <button class="button" type="submit">Save activity</button>
+          {% endif %}
+        </form>
+
+        {% if modal.overlaps %}
+          <div class="note">
+            {% for item in modal.overlaps %}
+              <p>
+                Overlaps with <a href="{{ item.href }}">{{ item.name }}</a> ({{ item.dates }}, {{ item.shop_label }}).
+                {% if item.different_shop %}
+                  It runs on the other shop, so the two do not share a storefront.
+                {% endif %}
+                {% if item.shares_products %}
+                  Both include the same products in the orders, so this reading does not split those orders between them.
+                {% endif %}
+              </p>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        {% if modal.activity and modal.activity.status == 'done' and modal.score %}
+          <section class="sheet score">
+            <h2>Reading</h2>
+            <p>{{ modal.score.message }}</p>
+            {% for note in modal.score.notes %}
+              <p class="quiet">{{ note }}</p>
+            {% endfor %}
+            {% for group in modal.score.figures %}
+              {% if modal.score.figures|length > 1 %}
+                <h3 class="mono">{{ group.currency }}</h3>
+              {% endif %}
+              <div class="figures">
+                <article class="figure">
+                  <p class="kicker">Revenue</p>
+                  <p class="value">{{ group.revenue.total|money(group.currency) }}</p>
+                  {% if group.revenue.delta_ratio|delta %}
+                    <p class="delta">{{ group.revenue.delta_ratio|delta }}</p>
+                  {% endif %}
+                  {% if group.revenue.baseline_total is not none %}
+                    <p class="fine">Baseline {{ group.revenue.baseline_total|money(group.currency) }}</p>
+                    <p class="fine">Per day {{ group.revenue.per_day|money(group.currency) }} vs {{ group.revenue.baseline_per_day|money(group.currency) }}</p>
+                  {% elif group.revenue.per_day is not none %}
+                    <p class="fine">Per day {{ group.revenue.per_day|money(group.currency) }}</p>
+                  {% endif %}
+                  {% if group.spark_points %}
+                    <svg class="spark" viewBox="0 0 160 36" role="img" aria-label="Revenue on each day of the activity">
+                      <polyline points="{{ group.spark_points }}" />
+                    </svg>
+                  {% endif %}
+                </article>
+                <article class="figure">
+                  <p class="kicker">Orders</p>
+                  <p class="value">{{ group.orders.total|count }}</p>
+                  {% if group.orders.delta_ratio|delta %}
+                    <p class="delta">{{ group.orders.delta_ratio|delta }}</p>
+                  {% endif %}
+                  {% if group.orders.baseline_total is not none %}
+                    <p class="fine">Baseline {{ group.orders.baseline_total|count }}</p>
+                    <p class="fine">Per day {{ group.orders.per_day|count }} vs {{ group.orders.baseline_per_day|count }}</p>
+                  {% endif %}
+                </article>
+                <article class="figure">
+                  <p class="kicker">Units</p>
+                  <p class="value">{{ group.units.total|count }}</p>
+                  {% if group.units.total is none %}
+                    <p class="fine">Quantity was not in the mapped columns.</p>
+                  {% elif group.units.delta_ratio|delta %}
+                    <p class="delta">{{ group.units.delta_ratio|delta }}</p>
+                  {% endif %}
+                  {% if group.units.baseline_total is not none %}
+                    <p class="fine">Baseline {{ group.units.baseline_total|count }}</p>
+                    <p class="fine">Per day {{ group.units.per_day|count }} vs {{ group.units.baseline_per_day|count }}</p>
+                  {% endif %}
+                </article>
+                <article class="figure">
+                  <p class="kicker">Discount</p>
+                  <p class="value">{{ group.discount.total|money(group.currency) }}</p>
+                  {% if group.discount.total is none %}
+                    <p class="fine">Discount amount was not in the mapped columns.</p>
+                  {% elif group.discount.per_day is not none %}
+                    <p class="fine">Per day {{ group.discount.per_day|money(group.currency) }}</p>
+                  {% endif %}
+                </article>
+              </div>
+            {% endfor %}
+            {% if modal.score.keys_found %}
+              <p class="fine">Codes found on orders: {{ modal.score.keys_found | join(", ") }}.</p>
+            {% endif %}
+          </section>
+        {% elif modal.activity %}
+          <p class="quiet">Results will appear here after this activity is marked done and an order export is imported.</p>
+        {% endif %}
+
+        {% if modal.activity %}
+          <form class="danger-row" method="post" action="/activities/{{ modal.activity.id }}/delete" onsubmit="return confirm('Remove this activity from the plan?');">
+            <input type="hidden" name="return_view" value="{{ view }}">
+            <input type="hidden" name="return_shop" value="{{ shop }}">
+            <button class="button danger" type="submit">Remove activity</button>
+          </form>
+        {% endif %}
+      </div>
+
+      <aside class="side">
+        {% if modal.checklist %}
+          <section class="checklist">
+            <p class="kicker">Merchant Center checklist</p>
+            <p class="fine">{{ modal.checklist.type_label }} · {{ modal.checklist.shops_label }} · {{ modal.checklist.audience_label }}</p>
+            {% if modal.checklist.missing %}
+              <p class="quiet">Still needed in <a href="{{ modal.checklist.settings_href }}">Settings</a>: {{ modal.checklist.missing | join(", ") }}.</p>
+            {% endif %}
+            {% if modal.checklist.predicate and modal.checklist.product_count %}
+              <p class="mono copy-line" title="Predicate">{{ modal.checklist.predicate }}</p>
+            {% endif %}
+            <ol class="checklist-steps">
+              {% for step in modal.checklist.steps %}
+                <li>
+                  <p class="checklist-title">{{ step.title }}</p>
+                  <p class="fine">{{ step.detail }}</p>
+                  {% if step.copy %}
+                    <p class="mono copy-line">{{ step.copy }}</p>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ol>
+          </section>
+        {% endif %}
+
+        <p class="kicker">Earlier activities of this type</p>
+        {% if modal.similar %}
+          {% for item in modal.similar %}
+            <article class="side-item">
+              <a href="{{ item.href }}">{{ item.name }}</a>
+              <p class="fine">{{ item.dates }}</p>
+              <p>{{ item.reading }}</p>
+            </article>
+          {% endfor %}
+        {% elif modal.activity %}
+          <p class="fine">None of this type yet.</p>
+        {% else %}
+          <p class="fine">After you save, earlier activities of the same type will show here.</p>
+        {% endif %}
+      </aside>
+    </div>
+  </div>
+</dialog>
+<script>
+(function () {
+  var dialog = document.getElementById("activity-modal");
+  if (!dialog) return;
+  if (typeof dialog.showModal === "function") {
+    dialog.showModal();
+  } else {
+    dialog.setAttribute("open", "");
+  }
+  dialog.addEventListener("close", function () {
+    window.location = "{{ close_href }}";
+  });
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) dialog.close();
+  });
+  var filter = dialog.querySelector("[data-catalog-filter]");
+  var list = dialog.querySelector("[data-catalog-list]");
+  if (filter && list) {
+    filter.addEventListener("input", function () {
+      var needle = filter.value.trim().toLowerCase();
+      list.querySelectorAll(".catalog-item").forEach(function (item) {
+        var hay = item.getAttribute("data-search") || "";
+        item.hidden = needle && hay.indexOf(needle) === -1;
+      });
+    });
+  }
+})();
+</script>

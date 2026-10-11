@@ -1,0 +1,12 @@
+order_number,created_at,order_state,sku,product_name,quantity,line_total,discount,currency,discount_code,customer_email
+B1,2026-02-01,Complete,NK-1,Formula,1,100.00,0,CZK,,parent@example.com
+B2,2026-02-02,Complete,NK-1,Formula,1,100.00,0,CZK,,parent@example.com
+B3,2026-02-03,Complete,NK-1,Formula,1,100.00,0,CZK,,
+B4,2026-02-04,Complete,NK-1,Formula,1,100.00,0,CZK,,
+B5,2026-02-05,Complete,NK-2,Bottle,1,999.00,0,CZK,,
+M1,2026-03-01,Complete,NK-1,Formula,2,180.00,20,CZK,WELCOME15,parent@example.com
+M2,2026-03-05,Complete,NK-1,Formula,2,180.00,20,CZK,WELCOME15,
+M3,2026-03-10,Complete,NK-1,Formula,2,180.00,20,CZK,WELCOME15,
+M4,2026-03-14,Cancelled,NK-1,Formula,2,180.00,20,CZK,WELCOME15,
+M5,2026-03-08,Complete,NK-1,Formula,1,50.00,0,CZK,OTHER,
+M6,2026-04-01,Complete,NK-1,Formula,1,180.00,20,CZK,WELCOME15,

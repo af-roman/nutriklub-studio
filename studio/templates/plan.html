@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="page-head">
+  <p class="eyebrow">Plan</p>
+  <div class="head-row">
+    <div class="year-switch">
+      <a class="year-arrow" href="/?year={{ year - 1 }}&shop={{ shop }}{% if view == 'months' %}&view=months{% endif %}" aria-label="Previous year">‹</a>
+      <h1>{{ year }}</h1>
+      <a class="year-arrow" href="/?year={{ year + 1 }}&shop={{ shop }}{% if view == 'months' %}&view=months{% endif %}" aria-label="Next year">›</a>
+      {% if year != today_year %}
+        <a class="text-link" href="/?year={{ today_year }}&shop={{ shop }}{% if view == 'months' %}&view=months{% endif %}">This year</a>
+      {% endif %}
+    </div>
+    <div class="head-actions">
+      <div class="legend" aria-label="Status">
+        <span><i class="dot dot-draft"></i>Draft</span>
+        <span><i class="dot dot-planned"></i>Planned</span>
+        <span><i class="dot dot-live"></i>Live</span>
+        <span><i class="dot dot-done"></i>Done</span>
+        <span><i class="dot dot-cancelled"></i>Cancelled</span>
+      </div>
+      <div class="legend" aria-label="Shops">
+        <span><i class="stripe stripe-both"></i>CZ · SK</span>
+        <span><i class="stripe stripe-cz"></i>CZ</span>
+        <span><i class="stripe stripe-sk"></i>SK</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if open_year %}
+<section class="strip">
+  <article class="card card-wide">
+    <p class="kicker">The year is open</p>
+    {% if shop == 'cz' %}
+      <p>Nothing is scheduled on the Czech shop. Activities that run on both shops appear here too.</p>
+    {% elif shop == 'sk' %}
+      <p>Nothing is scheduled on the Slovak shop. Activities that run on both shops appear here too.</p>
+    {% else %}
+      <p>Nothing is scheduled. Add the first activity.</p>
+    {% endif %}
+    <a class="button" href="{{ new_activity_href }}">Add the first activity</a>
+  </article>
+</section>
+{% else %}
+<section class="strip">
+  {% if upcoming %}
+  <article class="card">
+    <p class="kicker">Upcoming</p>
+    <p><a href="{{ upcoming.href }}">{{ upcoming.name }}</a></p>
+    <p class="fine">{{ upcoming.lead }}</p>
+  </article>
+  {% endif %}
+  {% if summary.gap %}
+  <article class="card">
+    <p class="kicker">Open stretch</p>
+    <p>{{ summary.gap.days }} days with nothing scheduled, {{ summary.gap.label }}.</p>
+  </article>
+  {% endif %}
+  {% for item in readings %}
+  <article class="card">
+    <p class="kicker">Reading</p>
+    <p><a href="{{ item.href }}">{{ item.reading }}</a></p>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if not open_year and shop == 'cz' %}
+  <p class="fine calendar-note">Czech shop. Activities marked CZ · SK run here as well.</p>
+{% elif not open_year and shop == 'sk' %}
+  <p class="fine calendar-note">Slovak shop. Activities marked CZ · SK run here as well.</p>
+{% endif %}
+
+{% if view == 'months' %}
+<section class="ledger" aria-label="Month calendar">
+  <div class="month month-head">
+    <span>Month</span>
+    <div class="weeks">
+      <span>Week 1 · 1–7</span>
+      <span>Week 2 · 8–14</span>
+      <span>Week 3 · 15–21</span>
+      <span>Week 4 · 22–end</span>
+    </div>
+    <span class="load">Activities</span>
+  </div>
+  {% for month in months %}
+  <div class="month">
+    <div class="month-name">
+      <span class="m">{{ month.name }}</span>
+      <span class="n">{{ month.index }}</span>
+    </div>
+    <div class="track">
+      {% if month.today_pct is not none %}
+        <span class="today-line" style="left: {{ month.today_pct }}%"></span>
+        <span class="today-tag" style="left: {{ month.today_pct }}%">Today</span>
+      {% endif %}
+      {% if month.empty %}
+        <p class="open-month">Nothing scheduled</p>
+      {% else %}
+        {% for lane in month.lanes %}
+        <div class="lane">
+          {% for bar in lane %}
+          <a class="bar bar-{{ bar.status }} shop-{{ bar.shops }}" href="{{ bar.href }}" title="{{ bar.name }} · {{ bar.shop_label }} · {{ bar.dates }}" style="grid-column: {{ bar.col_start }} / {{ bar.col_end }}">
+            <span class="bar-name">{{ bar.name }}</span>
+            <span class="bar-meta">{{ bar.shop_label }} · {{ bar.type_label }} · {{ bar.dates }}</span>
+          </a>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+    <div class="load">{{ month.load }}</div>
+  </div>
+  {% endfor %}
+</section>
+{% else %}
+<section class="year-scroll" id="year-scroll" style="--days: {{ timeline.day_count }}" aria-label="Year calendar">
+  <div class="year-sheet">
+    <div class="year-head">
+      <div class="head-rail"><span>Type</span></div>
+      <div class="head-time">
+        <div class="month-band">
+          {% for month in timeline.months %}
+            <div class="month-cell" style="width: calc({{ month.days }} * var(--day))">{{ month.name }}</div>
+          {% endfor %}
+        </div>
+        <div class="week-band">
+          {% for week in timeline.weeks %}
+            <div class="week-cell" style="width: calc({{ week.days }} * var(--day))">{{ week.label }}</div>
+          {% endfor %}
+        </div>
+        <div class="day-band">
+          {% for day in timeline.days %}
+            <div class="day-num{% if day.weekend %} is-weekend{% endif %}{% if day.today %} is-today{% endif %}{% if day.month_start %} is-month{% endif %}">
+              <span class="wd">{{ day.weekday }}</span>
+              <span>{{ day.number }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="year-body">
+      <div class="day-wash" aria-hidden="true">
+        {% for day in timeline.days %}
+          <div class="wash{% if day.weekend %} is-weekend{% endif %}{% if day.today %} is-today{% endif %}{% if day.month_start %} is-month{% endif %}"></div>
+        {% endfor %}
+      </div>
+      {% for row in timeline.rows %}
+        <div class="type-row{% if loop.index is even %} is-alt{% endif %}">
+          <div class="type-rail">
+            <span class="type-name">{{ row.label }}</span>
+            <span class="type-count">{{ row.meta }}</span>
+          </div>
+          <div class="type-track">
+            {% if row.lanes %}
+              {% for lane in row.lanes %}
+                <div class="stack">
+                  {% for bar in lane %}
+                    <a class="bar bar-{{ bar.status }} shop-{{ bar.shops }}{% if bar.span < 2 %} is-short{% endif %}" href="{{ bar.href }}" title="{{ bar.name }} · {{ bar.shop_label }} · {{ bar.dates }}" style="left: calc({{ bar.start }} * var(--day) + 2px); width: calc({{ bar.span }} * var(--day) - 4px);" data-activity-id="{{ bar.id }}" data-start="{{ bar.start }}" data-span="{{ bar.span }}" data-year="{{ year }}">
+                      <span class="bar-handle bar-handle-start" data-edge="start" aria-hidden="true"></span>
+                      {% if bar.span >= 5 %}<span class="bar-shop">{{ bar.shop_label }}</span>{% endif %}
+                      {% if bar.span >= 3 %}<span class="bar-name">{{ bar.name }}</span>{% endif %}
+                      {% if bar.span >= 10 %}<span class="bar-meta">{{ bar.dates }}</span>{% endif %}
+                      <span class="bar-handle bar-handle-end" data-edge="end" aria-hidden="true"></span>
+                    </a>
+                  {% endfor %}
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="stack is-empty"></div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+<script src="/static/calendar.js"></script>
+{% endif %}
+
+{% if summary %}
+<section class="summary">
+  <p class="kicker">This year</p>
+  <div class="summary-grid">
+    <article>
+      <p class="kicker">Activities</p>
+      <p class="summary-value">{{ summary.activity_count }}</p>
+    </article>
+    <article>
+      <p class="kicker">Days with an activity</p>
+      <p class="summary-value">{{ summary.days_active }}</p>
+    </article>
+    <article>
+      <p class="kicker">Average length</p>
+      <p class="summary-value">{{ summary.average_duration }}</p>
+    </article>
+    <article>
+      <p class="kicker">Longest open stretch</p>
+      <p class="summary-value">{% if summary.gap %}{{ summary.gap.label }}{% else %}None of a week or more{% endif %}</p>
+    </article>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

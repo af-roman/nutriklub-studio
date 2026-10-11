@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block main %}
+<section class="page-head">
+  <p class="eyebrow"><a href="/?year={{ year }}">Plan</a> · Import</p>
+  <div class="head-row">
+    <h1>Import orders</h1>
+    <a class="text-link" href="/?year={{ year }}">Return to plan</a>
+  </div>
+  <p class="lede">Export orders from Commercetools as CSV and drop the file here. Studio keeps a local copy so a finished activity can be compared with a baseline. Dates written as 03/04/2026 are read as 3 April 2026.</p>
+</section>
+
+{% if error %}
+  <p class="note" role="alert">{{ error }}</p>
+{% endif %}
+
+<section class="sheet privacy">
+  <p class="kicker">What is stored</p>
+  <p>Only the commercial columns you map are written into Studio. Customer names, email addresses, phone numbers, and street addresses are removed before the file is kept, even when they are present in the export.</p>
+</section>
+
+{% if not pending %}
+<form class="sheet drop" method="post" action="/import/upload" enctype="multipart/form-data">
+  <label for="file">Orders file</label>
+  <input id="file" name="file" type="file" accept=".csv,text/csv" required>
+  <button class="button" type="submit">Load file</button>
+</form>
+{% else %}
+<section class="sheet">
+  <div class="head-row">
+    <div>
+      <p class="kicker">File</p>
+      <p>{{ pending.filename }} · {{ pending.row_count }} rows</p>
+    </div>
+    <form method="post" action="/import/discard">
+      <button class="button secondary" type="submit">Discard file</button>
+    </form>
+  </div>
+  {% if pending.pii_headers %}
+    <p class="fine">Left out: {{ pending.pii_headers | join(", ") }}.</p>
+  {% endif %}
+</section>
+
+<form method="post" action="/import/commit">
+  <table class="map-table">
+    <thead>
+      <tr>
+        <th>Studio field</th>
+        <th>Need</th>
+        <th>Column in the file</th>
+        <th>Sample</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for field, label, hint, required in fields %}
+        {% set chosen = posted_mapping.get(field, '') if (posted_mapping is defined and posted_mapping) else (pending.suggested.get(field, '') if pending.suggested else '') %}
+        <tr>
+          <td>
+            <p>{{ label }}</p>
+            <p class="fine">{{ hint }}</p>
+          </td>
+          <td>{% if required %}<span class="badge badge-live">Required</span>{% else %}<span class="badge badge-draft">Optional</span>{% endif %}</td>
+          <td>
+            <select name="map_{{ field }}" data-sample-target="sample-{{ field }}">
+              <option value="">Don't import</option>
+              {% for header in pending.headers %}
+                <option value="{{ header }}" data-sample="{{ pending.sample.get(header, '') }}" {% if chosen == header %}selected{% endif %}>{{ header }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="mono" id="sample-{{ field }}">{{ pending.sample.get(chosen, '—') or '—' }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="commit-row">
+    <button class="button" type="submit">Store orders</button>
+    <p class="fine">This replaces the orders already stored in Studio with this file.</p>
+  </div>
+</form>
+<script>
+  document.querySelectorAll("select[data-sample-target]").forEach((select) => {
+    const target = document.getElementById(select.dataset.sampleTarget);
+    const update = () => {
+      const option = select.selectedOptions[0];
+      target.textContent = option && option.dataset.sample ? option.dataset.sample : "—";
+    };
+    select.addEventListener("change", update);
+  });
+</script>
+{% endif %}
+
+{% if just_imported and latest_import %}
+  <p class="confirm">
+    Stored {{ latest_import.order_count }} orders from {{ latest_import.filename }} on {{ latest_import.display }}.
+    Customer details were not written. This replaced any orders already in Studio.
+    {% if latest_import.skipped_rows %}{{ latest_import.skipped_rows }} rows were skipped because the order id or date could not be read.{% endif %}
+  </p>
+{% elif latest_import and not pending %}
+  <p class="fine">Last import {{ latest_import.display }} · {{ latest_import.order_count }} orders from {{ latest_import.filename }}.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{{ title }} · Studio</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body{% if modal %} class="modal-open"{% endif %}>
+  <header class="top">
+    <div class="brand-block">
+      <a class="brand" href="/?year={{ year }}&shop={{ shop }}">Studio</a>
+      <span class="crumb">Local workspace</span>
+    </div>
+    <nav class="nav" aria-label="Primary">
+      <div class="toggle" role="group" aria-label="View">
+        <a class="{% if view == 'calendar' %}is-on{% endif %}" href="/?year={{ year }}&shop={{ shop }}">Calendar</a>
+        <a class="{% if view == 'months' %}is-on{% endif %}" href="/?year={{ year }}&view=months&shop={{ shop }}">Months</a>
+        <a class="{% if view == 'list' %}is-on{% endif %}" href="/?year={{ year }}&view=list&shop={{ shop }}">List</a>
+      </div>
+      <div class="shop-switch">
+        <span class="fine">Shop</span>
+        <div class="toggle" role="group" aria-label="Shop">
+          <a class="{% if shop == 'all' %}is-on{% endif %}" href="/?year={{ year }}{% if view != 'calendar' %}&view={{ view }}{% endif %}&shop=all">All</a>
+          <a class="{% if shop == 'cz' %}is-on{% endif %}" href="/?year={{ year }}{% if view != 'calendar' %}&view={{ view }}{% endif %}&shop=cz">CZ</a>
+          <a class="{% if shop == 'sk' %}is-on{% endif %}" href="/?year={{ year }}{% if view != 'calendar' %}&view={{ view }}{% endif %}&shop=sk">SK</a>
+        </div>
+      </div>
+    </nav>
+    <div class="top-meta">
+      {% if latest_import %}
+        <span class="import-pill">Last import {{ latest_import.display }} · {{ latest_import.order_count }} orders</span>
+      {% else %}
+        <span class="import-pill">No order file yet</span>
+      {% endif %}
+      <a class="text-link" href="/settings">Settings</a>
+      <a class="text-link" href="/import">Import orders</a>
+      <a class="button" href="{{ new_activity_href }}">New activity</a>
+    </div>
+  </header>
+  <main class="wrap">
+    {% block main %}{% endblock %}
+  </main>
+  <footer class="foot">
+    <span>Local planning desk</span>
+    <span>Orders stay in studio.db on this machine</span>
+  </footer>
+  {% if modal %}
+    {% include "_activity_modal.html" %}
+  {% endif %}
+</body>
+</html>
