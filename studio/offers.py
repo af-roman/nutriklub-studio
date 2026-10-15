@@ -45,6 +45,7 @@ def blank_offer(activity_type: str = "product_discount") -> dict:
         "cart_threshold": "",
         "max_gifts": "",
         "stacking_note": "",
+        "stacking_stops": "",
     }
     return base
 
@@ -78,6 +79,15 @@ def extract_offer_from_form(form: dict) -> dict:
     offer = blank_offer()
     for key in offer:
         offer[key] = (form.get(f"offer_{key}") or form.get(key) or "").strip()
+    stops = (form.get("offer_stacking_stops") or form.get("stacking_stops") or "").strip().lower()
+    stop_note = "Stop stacking after this discount"
+    if stops in {"1", "on", "yes", "true"} or offer.get("stacking_stops") in {"1", "on", "yes", "true"}:
+        offer["stacking_stops"] = "yes"
+        offer["stacking_note"] = stop_note
+    else:
+        offer["stacking_stops"] = ""
+        if offer.get("stacking_note") in {stop_note, "Stop after this discount (does not stack with others)"}:
+            offer["stacking_note"] = ""
     return offer
 
 

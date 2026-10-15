@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from datetime import date
 from typing import List, Optional
 from pathlib import Path
@@ -60,10 +62,13 @@ from studio.db import (
     update_activity,
     update_activity_dates,
 )
+from starlette.middleware.gzip import GZipMiddleware
+
 from studio.auth import BasicAuthMiddleware
 from studio.formatting import format_count, format_delta, format_money, format_range, format_timestamp
 from studio.forms import FormError, normalize_type, parse_activity_form, parse_keys, parse_schedule
 from studio.packs import build_planning_packs
+from studio.sales import sales_window, sku_daily_rates
 from studio.importer import (
     ImportProblem,
     apply_mapping,
@@ -91,6 +96,7 @@ templates = Jinja2Templates(directory=PACKAGE / "templates")
 templates.env.filters["money"] = format_money
 templates.env.filters["count"] = format_count
 templates.env.filters["delta"] = format_delta
+templates.env.filters["tojson"] = lambda value: json.dumps(value, ensure_ascii=False)
 templates.env.globals["STATUSES"] = STATUSES
 templates.env.globals["TYPES"] = TYPES
 templates.env.globals["SHOPS"] = SHOPS
@@ -106,8 +112,17 @@ templates.env.globals["MULTIBUY_MODES"] = MULTIBUY_MODES
 templates.env.globals["GIFT_MODES"] = GIFT_MODES
 
 app = FastAPI(title="Studio")
+app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(BasicAuthMiddleware)
 app.mount("/static", StaticFiles(directory=PACKAGE / "static"), name="static")
+
+
+@app.middleware("http")
+async def cache_static(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @app.get("/healthz")
@@ -298,6 +313,12 @@ def _modal_packs(conn, form: dict, activity_id: int | None = None) -> dict:
         payload["offer"] = form["offer"]
         payload["offer_json"] = offer_to_json(form["offer"])
     payload["asset_options"] = ",".join(form.get("asset_option_keys") or [])
+    window = sales_window(payload)
+    payload["sales_window"] = window
+    if window and payload["skus"]:
+        payload["sales_rates"] = sku_daily_rates(conn, payload["skus"], window[0], window[1])
+    else:
+        payload["sales_rates"] = {}
     others = decorate(list_activities(conn))
     return build_planning_packs(payload, settings, products, others)
 
@@ -365,14 +386,41 @@ def similar_view(conn, activity: dict, others: list[dict], year: int, view: str,
     return found
 
 
+def _catalog_categories(catalog: list[dict]) -> list[str]:
+    found: set[str] = set()
+    for item in catalog:
+        raw = item.get("categories") or ""
+        for part in re.split(r"[;|,]", raw):
+            token = part.strip()
+            if token:
+                found.add(token)
+    return sorted(found, key=str.casefold)
+
+
+def _enrich_form_stock(form: dict, packs: dict) -> None:
+    stock_lines = {line["sku"]: line for line in (packs.get("stock") or {}).get("lines") or []}
+    rates = packs.get("sales_rates") or {}
+    for line in form.get("sku_lines") or []:
+        sku = line.get("sku") or ""
+        info = stock_lines.get(sku) or {}
+        if "past_rate" not in line or line.get("past_rate") is None:
+            line["past_rate"] = info.get("past_rate", rates.get(sku))
+        if "est_ask" not in line:
+            line["est_ask"] = info.get("ask")
+
+
 def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=None, error: str = ""):
     if not token:
         return None
     others = decorate(list_activities(conn))
     catalog = list_catalog(conn)
+    settings = get_settings(conn)
+    default_uplift = (settings.get("default_stock_uplift") or "1.3").strip() or "1.3"
+    categories = _catalog_categories(catalog)
     if token == "new":
         form = form or blank_form()
         packs = _modal_packs(conn, form)
+        _enrich_form_stock(form, packs)
         return {
             "form": form,
             "error": error,
@@ -381,8 +429,11 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
             "overlaps": [],
             "similar": [],
             "catalog": catalog,
+            "catalog_categories": categories,
             "packs": packs,
             "checklist": packs["checklist"],
+            "sales_rates": packs.get("sales_rates") or {},
+            "default_uplift": default_uplift,
         }
     try:
         activity_id = int(token)
@@ -397,6 +448,7 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
     score = score_activity(conn, activity) if activity["status"] == "done" else None
     form = form or form_from_activity(activity)
     packs = _modal_packs(conn, form, activity_id=activity["id"])
+    _enrich_form_stock(form, packs)
     return {
         "form": form,
         "error": error,
@@ -405,8 +457,11 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
         "overlaps": overlaps,
         "similar": similar,
         "catalog": catalog,
+        "catalog_categories": categories,
         "packs": packs,
         "checklist": packs["checklist"],
+        "sales_rates": packs.get("sales_rates") or {},
+        "default_uplift": default_uplift,
     }
 
 
@@ -1047,6 +1102,7 @@ def commit_import(
     map_discount_amount: str = Form(""),
     map_currency: str = Form(""),
     map_promo_key: str = Form(""),
+    amounts_in_cents: str = Form(""),
 ):
     mapping = {
         "order_id": map_order_id.strip(),
@@ -1061,6 +1117,7 @@ def commit_import(
         "currency": map_currency.strip(),
         "promo_key": map_promo_key.strip(),
     }
+    in_cents = amounts_in_cents.strip().lower() in {"1", "on", "yes", "true"}
     with session() as conn:
         pending = _pending_with_saved_map(conn)
         error = ""
@@ -1083,7 +1140,7 @@ def commit_import(
                 error=error,
                 posted_mapping=mapping,
             )
-        rows, skipped = apply_mapping(load_pending_rows(), mapping)
+        rows, skipped = apply_mapping(load_pending_rows(), mapping, amounts_in_cents=in_cents)
         if not rows:
             return render(
                 request,

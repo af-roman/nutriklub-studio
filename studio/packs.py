@@ -190,13 +190,20 @@ def constraint_warnings(
     return unique
 
 
-def build_stock_ask(activity: dict, settings: dict, products: list[dict]) -> dict:
+def build_stock_ask(
+    activity: dict,
+    settings: dict,
+    products: list[dict],
+    sales_rates: dict[str, float] | None = None,
+    sales_window: tuple[str, str] | None = None,
+) -> dict:
     days = _activity_days(activity)
     default_uplift = _parse_float(settings.get("default_stock_uplift"), 1.3)
     by_name = {item.get("sku"): item for item in products}
     sku_lines = activity.get("sku_lines") or []
     if not sku_lines and activity.get("skus"):
         sku_lines = [{"sku": sku, "units_per_day": "", "uplift": "", "ask_override": ""} for sku in activity["skus"]]
+    rates = sales_rates or {}
 
     lines = []
     total = 0
@@ -204,7 +211,17 @@ def build_stock_ask(activity: dict, settings: dict, products: list[dict]) -> dic
     for row in sku_lines:
         sku = row.get("sku") or ""
         product = by_name.get(sku) or {}
-        units = _parse_float(row.get("units_per_day"), 0.0)
+        past = rates.get(sku)
+        override_rate = (row.get("units_per_day") or "").strip()
+        if override_rate:
+            units = _parse_float(override_rate, 0.0)
+            rate_source = "manual rate"
+        elif past is not None:
+            units = past
+            rate_source = "past sales"
+        else:
+            units = 0.0
+            rate_source = "no past sales"
         uplift_raw = (row.get("uplift") or "").strip()
         uplift = _parse_float(uplift_raw, default_uplift) if uplift_raw else default_uplift
         if uplift <= 0:
@@ -212,13 +229,13 @@ def build_stock_ask(activity: dict, settings: dict, products: list[dict]) -> dic
         override = (row.get("ask_override") or "").strip()
         if override:
             ask = int(math.ceil(_parse_float(override, 0.0)))
-            method_bit = "manual override"
+            method_bit = "manual ask override"
         elif units > 0 and days > 0:
             ask = int(math.ceil(units * days * uplift))
-            method_bit = f"{units:g}/day × {days}d × {uplift:g}"
+            method_bit = f"{units:.2f}/day ({rate_source}) × {days}d × {uplift:g}"
         else:
             ask = None
-            method_bit = "set units/day"
+            method_bit = "need past sales or a units/day override"
         if ask is not None:
             total += ask
             any_ask = True
@@ -228,16 +245,26 @@ def build_stock_ask(activity: dict, settings: dict, products: list[dict]) -> dic
                 "name": product.get("name") or "",
                 "categories": product.get("categories") or "",
                 "units_per_day": row.get("units_per_day") or "",
+                "past_rate": past,
                 "uplift": uplift_raw or f"{default_uplift:g} (default)",
                 "ask": ask,
                 "method": method_bit,
             }
         )
 
-    method = f"Per-SKU ask over {days} days (default uplift {default_uplift:g})"
+    window_label = (
+        f"{sales_window[0]} → {sales_window[1]}"
+        if sales_window
+        else "baseline or 28 days before start"
+    )
+    method = (
+        f"Past sales/day ({window_label}) × activity days × uplift "
+        f"(default uplift {default_uplift:g})"
+    )
     brief_lines = [
         f"Stock ask — {activity.get('name') or 'Activity'}",
-        f"Window: {activity.get('start_date') or '…'} → {activity.get('end_date') or '…'} ({days} days)",
+        f"Activity window: {activity.get('start_date') or '…'} → {activity.get('end_date') or '…'} ({days} days)",
+        f"Sales lookback: {window_label}",
         f"Shops: {SHOPS.get(activity.get('shops') or 'both')}",
         f"Method: {method}",
         "",
@@ -245,21 +272,23 @@ def build_stock_ask(activity: dict, settings: dict, products: list[dict]) -> dic
     for line in lines:
         qty = str(line["ask"]) if line["ask"] is not None else "TBD"
         label = line["name"] or "—"
+        past_bit = f"{line['past_rate']:.2f}/day" if line["past_rate"] is not None else "no past sales"
         brief_lines.append(
-            f"- {line['sku']}: {qty} units ({label}; {line['method']})"
+            f"- {line['sku']}: {qty} units ({label}; past {past_bit}; {line['method']})"
         )
     if not lines:
         brief_lines.append("- (no SKUs selected)")
     brief_lines.extend(
         [
             "",
-            "Per-SKU assumptions on the activity. This is a planning ask, not SAP truth.",
+            "Past sales come from imported orders. Uplift and overrides are set on the activity.",
         ]
     )
     return {
         "days": days,
         "default_uplift": default_uplift,
         "method": method,
+        "sales_window": sales_window,
         "lines": lines,
         "total": total if any_ask else None,
         "copy_text": "\n".join(brief_lines),
@@ -396,7 +425,9 @@ def build_planning_packs(
                 "copy": "",
             }
         )
-    stock = build_stock_ask(payload, settings, products)
+    sales_rates = payload.get("sales_rates") or {}
+    sales_window = payload.get("sales_window")
+    stock = build_stock_ask(payload, settings, products, sales_rates, sales_window)
     assets = build_asset_brief(payload, products)
     legal = build_legal_pack(payload, settings, warnings)
     blocking = sum(1 for item in warnings if item["level"] == "block")
@@ -408,4 +439,6 @@ def build_planning_packs(
         "stock": stock,
         "assets": assets,
         "legal": legal,
+        "sales_rates": sales_rates,
+        "sales_window": sales_window,
     }

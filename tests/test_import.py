@@ -1,6 +1,6 @@
 from datetime import date
 
-from studio.importer import header_is_pii, parse_date, parse_number, store_upload, suggest_mapping
+from studio.importer import apply_mapping, header_is_pii, parse_date, parse_number, store_upload, suggest_mapping
 
 
 def test_numbers_and_dates():
@@ -38,3 +38,63 @@ def test_suggest_mapping_prefers_the_code_over_the_discount_amount():
     assert chosen["promo_key"] == "discount_code"
     assert chosen["discount_amount"] == "discount"
     assert chosen["amount"] == "line_total"
+
+
+def test_cent_amount_is_divided_by_100():
+    rows = [
+        {
+            "order_id": "1",
+            "line_id": "a",
+            "created_at": "2026-03-01",
+            "sku": "NK-1",
+            "amount": "19900",
+            "discount": "1500",
+            "code": "",
+        }
+    ]
+    mapping = {
+        "order_id": "order_id",
+        "line_id": "line_id",
+        "order_date": "created_at",
+        "sku": "sku",
+        "amount": "amount",
+        "discount_amount": "discount",
+        "promo_key": "code",
+    }
+    built, skipped = apply_mapping(rows, mapping, amounts_in_cents=True)
+    assert skipped == 0
+    assert built[0]["amount"] == 199.0
+    assert built[0]["discount_amount"] == 15.0
+
+
+def test_discount_code_only_lines_attach_to_sku_rows():
+    rows = [
+        {
+            "order_id": "99",
+            "line_id": "1",
+            "created_at": "2026-03-01",
+            "sku": "NK-1",
+            "amount": "10000",
+            "code": "",
+        },
+        {
+            "order_id": "99",
+            "line_id": "2",
+            "created_at": "2026-03-01",
+            "sku": "",
+            "amount": "0",
+            "code": "SPRING15",
+        },
+    ]
+    mapping = {
+        "order_id": "order_id",
+        "line_id": "line_id",
+        "order_date": "created_at",
+        "sku": "sku",
+        "amount": "amount",
+        "promo_key": "code",
+    }
+    built, _ = apply_mapping(rows, mapping, amounts_in_cents=True)
+    sku_row = next(row for row in built if row.get("sku") == "NK-1")
+    assert "SPRING15" in sku_row["promos"]
+    assert sku_row["amount"] == 100.0

@@ -127,6 +127,8 @@ def matched_lines(conn: sqlite3.Connection, activity: dict) -> list[dict]:
     if not keys:
         return []
     placeholders = ",".join("?" for _ in keys)
+    # Match promo codes at order level: CT often stores the code on a separate
+    # line without a SKU, while product lines carry the commercial quantities.
     rows = conn.execute(
         f"""
         SELECT order_id, line_id, order_date, sku, product_name, quantity, amount, discount_amount, currency
@@ -134,10 +136,11 @@ def matched_lines(conn: sqlite3.Connection, activity: dict) -> list[dict]:
         WHERE cancelled = 0
           AND order_date >= ?
           AND order_date <= ?
+          AND sku IS NOT NULL
+          AND TRIM(sku) != ''
           AND EXISTS (
               SELECT 1 FROM order_promos
               WHERE order_promos.order_id = order_lines.order_id
-                AND order_promos.line_id = order_lines.line_id
                 AND order_promos.promo_key_norm IN ({placeholders})
           )
         """,
@@ -211,17 +214,35 @@ def score_activity(conn: sqlite3.Connection, activity: dict) -> Score:
 
     lines = matched_lines(conn, activity)
     found_norms = set()
-    if lines:
-        norms = [key.casefold() for key in keys]
-        placeholders = ",".join("?" for _ in norms)
-        id_pairs = {(line["order_id"], line["line_id"]) for line in lines}
+    norms = [key.casefold() for key in keys]
+    placeholders = ",".join("?" for _ in norms)
+    order_ids = {line["order_id"] for line in lines}
+    if order_ids:
+        order_placeholders = ",".join("?" for _ in order_ids)
         promo_rows = conn.execute(
-            f"SELECT order_id, line_id, promo_key, promo_key_norm FROM order_promos WHERE promo_key_norm IN ({placeholders})",
-            norms,
+            f"""
+            SELECT DISTINCT promo_key_norm FROM order_promos
+            WHERE promo_key_norm IN ({placeholders})
+              AND order_id IN ({order_placeholders})
+            """,
+            (*norms, *order_ids),
         ).fetchall()
-        for row in promo_rows:
-            if (row["order_id"], row["line_id"]) in id_pairs:
-                found_norms.add(row["promo_key_norm"])
+        found_norms = {row["promo_key_norm"] for row in promo_rows}
+    elif norms:
+        # Codes may exist on non-SKU lines only — still report if they appear in the window.
+        promo_rows = conn.execute(
+            f"""
+            SELECT DISTINCT order_promos.promo_key_norm
+            FROM order_promos
+            JOIN order_lines ON order_lines.order_id = order_promos.order_id
+            WHERE order_promos.promo_key_norm IN ({placeholders})
+              AND order_lines.cancelled = 0
+              AND order_lines.order_date >= ?
+              AND order_lines.order_date <= ?
+            """,
+            (*norms, activity["start_date"], activity["end_date"]),
+        ).fetchall()
+        found_norms = {row["promo_key_norm"] for row in promo_rows}
     keys_found = [key for key in keys if key.casefold() in found_norms]
     keys_missing = [key for key in keys if key.casefold() not in found_norms]
     window = format_range(activity["start_date"], activity["end_date"])

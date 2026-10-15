@@ -167,14 +167,46 @@
             </div>
 
             <div class="offer-block" data-offer-for="cart_discount,shipping_discount,multibuy,gift">
-              <label for="offer_cart_predicate_note">Cart predicate note</label>
-              <textarea id="offer_cart_predicate_note" name="offer_cart_predicate_note" rows="2" maxlength="500" placeholder="e.g. totalPrice &gt; 500 OR lineItem count">{{ offer.cart_predicate_note }}</textarea>
+              <p class="kicker">Cart predicate builder</p>
+              <p class="fine">Builds Commercetools cart predicate syntax. Amounts are converted to <span class="mono">centAmount</span> (×100).</p>
+              <div class="predicate-builder" data-predicate-builder>
+                <div class="split">
+                  <div>
+                    <label for="pred_min_czk">Min cart total (CZK)</label>
+                    <input id="pred_min_czk" type="text" data-pred-min-czk maxlength="20" placeholder="e.g. 999">
+                  </div>
+                  <div>
+                    <label for="pred_min_eur">Min cart total (EUR)</label>
+                    <input id="pred_min_eur" type="text" data-pred-min-eur maxlength="20" placeholder="e.g. 39.99">
+                  </div>
+                </div>
+                <div class="split">
+                  <div>
+                    <label for="pred_min_qty">Min line-item quantity</label>
+                    <input id="pred_min_qty" type="text" data-pred-min-qty maxlength="10" placeholder="e.g. 2">
+                  </div>
+                  <div>
+                    <label class="asset-option" style="margin-top: 22px">
+                      <input type="checkbox" data-pred-require-skus checked>
+                      <span>Require selected SKUs in cart</span>
+                    </label>
+                  </div>
+                </div>
+                <p class="fine">Preview</p>
+                <p class="predicate-preview" data-pred-preview>—</p>
+                <button type="button" class="button secondary" data-pred-apply>Use this predicate</button>
+              </div>
+              <label for="offer_cart_predicate_note">Cart predicate</label>
+              <textarea id="offer_cart_predicate_note" name="offer_cart_predicate_note" rows="2" maxlength="500" placeholder="Built above, or paste a Merchant Center predicate" data-pred-target>{{ offer.cart_predicate_note }}</textarea>
               <label for="offer_sort_order">Cart sort order override</label>
               <input id="offer_sort_order" name="offer_sort_order" type="text" value="{{ offer.sort_order }}" maxlength="20" placeholder="Blank = Settings default">
             </div>
 
-            <label for="offer_stacking_note">Stacking note</label>
-            <input id="offer_stacking_note" name="offer_stacking_note" type="text" value="{{ offer.stacking_note }}" maxlength="200">
+            <label class="asset-option">
+              <input type="checkbox" name="offer_stacking_stops" value="yes" {% if offer.stacking_stops == 'yes' %}checked{% endif %}>
+              <span>Stop stacking after this discount</span>
+            </label>
+            <p class="fine">Maps to “does not stack with other discounts” on the activity brief. Uncheck if this offer may combine with others.</p>
 
             <label for="product_scope">Product range note</label>
             <textarea id="product_scope" name="product_scope" rows="2" maxlength="2000" placeholder="Category or brand note, if not picking SKUs below">{{ modal.form.product_scope }}</textarea>
@@ -188,15 +220,27 @@
                 {% endif %}
               </p>
               {% if modal.catalog %}
-                <input type="search" class="catalog-filter" placeholder="Filter products" data-catalog-filter aria-label="Filter products">
+                <div class="catalog-filters">
+                  <input type="search" class="catalog-filter" placeholder="Filter by SKU or name" data-catalog-filter aria-label="Filter products">
+                  <select data-catalog-category aria-label="Filter by category">
+                    <option value="">All categories</option>
+                    {% for cat in modal.catalog_categories or [] %}
+                      <option value="{{ cat }}">{{ cat }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
                 <div class="catalog-list" data-catalog-list>
                   {% set selected = modal.form.scope_skus or [] %}
                   {% for item in modal.catalog %}
-                    <label class="catalog-item" data-search="{{ (item.sku ~ ' ' ~ item.name ~ ' ' ~ item.product_key ~ ' ' ~ item.categories) | lower }}">
+                    <label
+                      class="catalog-item"
+                      data-search="{{ (item.sku ~ ' ' ~ item.name ~ ' ' ~ item.product_key ~ ' ' ~ item.categories) | lower }}"
+                      data-categories="{{ (item.categories or '') | lower | replace(';', '|') | replace(',', '|') }}"
+                    >
                       <input type="checkbox" name="scope_sku" value="{{ item.sku }}" data-sku="{{ item.sku }}" data-sku-name="{{ item.name or item.product_key or item.sku }}" {% if item.sku in selected %}checked{% endif %}>
                       <span>
                         <span class="mono">{{ item.sku }}</span>
-                        <span class="fine">{{ item.name or item.product_key or '—' }} · {{ SHOP_SHORT[item.shops] }}</span>
+                        <span class="fine">{{ item.name or item.product_key or '—' }} · {{ SHOP_SHORT[item.shops] }}{% if item.categories %} · {{ item.categories }}{% endif %}</span>
                       </span>
                     </label>
                   {% endfor %}
@@ -207,7 +251,7 @@
             <div class="split">
               <div>
                 <label for="code_required">Discount code</label>
-                <select id="code_required" name="code_required">
+                <select id="code_required" name="code_required" data-code-required>
                   {% for key, label in CODE_REQUIRED.items() %}
                     <option value="{{ key }}" {% if modal.form.code_required == key %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
@@ -222,19 +266,35 @@
                 </select>
               </div>
             </div>
+            <div data-codes-block>
+              <label for="match_keys">Promo / discount code(s)</label>
+              <textarea id="match_keys" name="match_keys" rows="3" maxlength="2000" placeholder="One code per line" data-match-keys>{{ modal.form.match_keys }}</textarea>
+              <p class="fine" data-codes-hint-required {% if modal.form.code_required != 'yes' %}hidden{% endif %}>Required for Merchant Center code setup and for matching orders in the reading.</p>
+              <p class="fine" data-codes-hint-optional {% if modal.form.code_required == 'yes' %}hidden{% endif %}>Optional for automatic discounts — still used to match orders in the reading if the export carries a promo name or code.</p>
+            </div>
           </section>
 
           <section class="sheet">
             <p class="kicker">Stock planning (per SKU)</p>
-            <p class="fine">Ask = units/day × activity days × uplift, unless you set a manual override. Save to refresh the stock pack.</p>
+            <p class="fine">
+              Past sales/day come from imported orders
+              {% if modal.packs and modal.packs.stock and modal.packs.stock.sales_window %}
+                ({{ modal.packs.stock.sales_window[0] }} → {{ modal.packs.stock.sales_window[1] }})
+              {% else %}
+                (baseline dates, or 28 days before start)
+              {% endif %}.
+              Ask ≈ past sales/day × activity days × uplift. Override units/day only when past sales are wrong. Save to refresh the stock pack.
+            </p>
             <div class="stock-table-wrap">
               <table class="stock-table" data-stock-table>
                 <thead>
                   <tr>
                     <th>SKU</th>
-                    <th>Units/day</th>
+                    <th>Past / day</th>
+                    <th>Override / day</th>
                     <th>Uplift</th>
                     <th>Ask override</th>
+                    <th>Est. ask</th>
                   </tr>
                 </thead>
                 <tbody data-stock-body>
@@ -244,14 +304,16 @@
                         <span class="mono">{{ line.sku }}</span>
                         <input type="hidden" name="stock_sku" value="{{ line.sku }}">
                       </td>
-                      <td><input name="stock_units" type="text" value="{{ line.units_per_day }}" maxlength="40"></td>
-                      <td><input name="stock_uplift_line" type="text" value="{{ line.uplift }}" maxlength="40" placeholder="default"></td>
+                      <td class="mono" data-past-cell>{% if line.past_rate is defined and line.past_rate is not none %}{{ "%.2f"|format(line.past_rate) }}{% else %}—{% endif %}</td>
+                      <td><input name="stock_units" type="text" value="{{ line.units_per_day }}" maxlength="40" placeholder="auto"></td>
+                      <td><input name="stock_uplift_line" type="text" value="{{ line.uplift }}" maxlength="40" placeholder="{{ modal.default_uplift or '1.3' }}"></td>
                       <td><input name="stock_ask" type="text" value="{{ line.ask_override }}" maxlength="40" placeholder="optional"></td>
+                      <td class="mono" data-est-cell>{% if line.est_ask is defined and line.est_ask is not none %}{{ line.est_ask }}{% else %}TBD{% endif %}</td>
                     </tr>
                   {% endfor %}
                 </tbody>
               </table>
-              <p class="fine" data-stock-empty {% if modal.form.sku_lines %}hidden{% endif %}>Select SKUs above to plan stock.</p>
+              <p class="fine" data-stock-empty {% if modal.form.sku_lines %}hidden{% endif %}>Select SKUs above to plan stock from past sales.</p>
             </div>
           </section>
 
@@ -270,9 +332,9 @@
             <textarea id="asset_notes" name="asset_notes" rows="3" maxlength="5000" placeholder="Tone, claims to avoid, deadlines">{{ modal.form.asset_notes }}</textarea>
           </section>
 
-          <details class="sheet" {% if modal.form.match_keys or modal.form.baseline_start or modal.form.discount_value or modal.form.product_scope %}open{% endif %}>
+          <details class="sheet" {% if modal.form.baseline_start or modal.form.discount_value or modal.form.product_scope %}open{% endif %}>
             <summary>Measurement</summary>
-            <p class="fine">Optional. Add these when you know how the activity will show up on an order. A draft can be saved without them.</p>
+            <p class="fine">Optional baseline window for the reading. Promo codes live under Offer detail (shown when a discount code is required).</p>
             <div class="split">
               <div>
                 <label for="baseline_start">Baseline start</label>
@@ -283,8 +345,6 @@
                 <input id="baseline_end" name="baseline_end" type="date" value="{{ modal.form.baseline_end }}">
               </div>
             </div>
-            <label for="match_keys">Promo codes or names</label>
-            <textarea id="match_keys" name="match_keys" rows="3" placeholder="One code per line">{{ modal.form.match_keys }}</textarea>
           </details>
 
           {% if not modal.activity %}
@@ -506,17 +566,27 @@
   dialog.addEventListener("click", function (event) {
     if (event.target === dialog) dialog.close();
   });
+
   var filter = dialog.querySelector("[data-catalog-filter]");
+  var category = dialog.querySelector("[data-catalog-category]");
   var list = dialog.querySelector("[data-catalog-list]");
-  if (filter && list) {
-    filter.addEventListener("input", function () {
-      var needle = filter.value.trim().toLowerCase();
-      list.querySelectorAll(".catalog-item").forEach(function (item) {
-        var hay = item.getAttribute("data-search") || "";
-        item.hidden = needle && hay.indexOf(needle) === -1;
-      });
+  function applyCatalogFilters() {
+    if (!list) return;
+    var needle = filter ? filter.value.trim().toLowerCase() : "";
+    var cat = category ? category.value.trim().toLowerCase() : "";
+    list.querySelectorAll(".catalog-item").forEach(function (item) {
+      var hay = item.getAttribute("data-search") || "";
+      var cats = (item.getAttribute("data-categories") || "").split("|").map(function (part) {
+        return part.trim();
+      }).filter(Boolean);
+      var textOk = !needle || hay.indexOf(needle) !== -1;
+      var catOk = !cat || cats.some(function (part) { return part === cat || part.indexOf(cat) !== -1; });
+      item.hidden = !(textOk && catOk);
     });
   }
+  if (filter) filter.addEventListener("input", applyCatalogFilters);
+  if (category) category.addEventListener("change", applyCatalogFilters);
+
   var tabs = dialog.querySelectorAll("[data-pack-tab]");
   var panels = dialog.querySelectorAll("[data-pack-panel]");
   tabs.forEach(function (tab) {
@@ -535,6 +605,7 @@
   var valueMode = dialog.querySelector("[data-offer-value-mode]");
   var shippingMode = dialog.querySelector("[data-shipping-mode]");
   var multibuyMode = dialog.querySelector("[data-multibuy-mode]");
+  var codeRequired = dialog.querySelector("[data-code-required]");
   function syncOfferFields() {
     var type = typeSelect ? typeSelect.value : "product_discount";
     dialog.querySelectorAll("[data-offer-for]").forEach(function (block) {
@@ -561,41 +632,119 @@
       getQty.hidden = pct;
       getPct.hidden = !pct;
     }
+    var required = codeRequired && codeRequired.value === "yes";
+    var hintReq = dialog.querySelector("[data-codes-hint-required]");
+    var hintOpt = dialog.querySelector("[data-codes-hint-optional]");
+    if (hintReq) hintReq.hidden = !required;
+    if (hintOpt) hintOpt.hidden = !!required;
   }
   if (typeSelect) typeSelect.addEventListener("change", syncOfferFields);
   if (valueMode) valueMode.addEventListener("change", syncOfferFields);
   if (shippingMode) shippingMode.addEventListener("change", syncOfferFields);
   if (multibuyMode) multibuyMode.addEventListener("change", syncOfferFields);
+  if (codeRequired) codeRequired.addEventListener("change", syncOfferFields);
   syncOfferFields();
+
+  function parseAmount(raw) {
+    var text = String(raw || "").trim().replace(/\s/g, "").replace(",", ".");
+    if (!text) return null;
+    var value = Number(text);
+    return isFinite(value) && value >= 0 ? value : null;
+  }
+  function toCents(amount) {
+    return Math.round(amount * 100);
+  }
+  function selectedSkus() {
+    return Array.prototype.slice.call(dialog.querySelectorAll('input[name="scope_sku"]:checked')).map(function (box) {
+      return box.value;
+    });
+  }
+  function buildPredicate() {
+    var parts = [];
+    var minCzk = parseAmount((dialog.querySelector("[data-pred-min-czk]") || {}).value);
+    var minEur = parseAmount((dialog.querySelector("[data-pred-min-eur]") || {}).value);
+    var minQty = parseAmount((dialog.querySelector("[data-pred-min-qty]") || {}).value);
+    var requireSkus = dialog.querySelector("[data-pred-require-skus]");
+    if (minCzk !== null) parts.push("totalPrice.centAmount >= " + toCents(minCzk));
+    if (minEur !== null) parts.push("totalPrice.centAmount >= " + toCents(minEur));
+    if (minQty !== null && minQty > 0) parts.push("lineItemCount(1 = 1) >= " + Math.round(minQty));
+    if (requireSkus && requireSkus.checked) {
+      var skus = selectedSkus();
+      if (skus.length === 1) {
+        parts.push('lineItemExists(sku = "' + skus[0].replace(/"/g, '\\"') + '")');
+      } else if (skus.length > 1) {
+        parts.push("lineItemExists(sku in (" + skus.map(function (sku) {
+          return '"' + sku.replace(/"/g, '\\"') + '"';
+        }).join(", ") + "))");
+      }
+    }
+    return parts.join(" and ");
+  }
+  function refreshPredicatePreview() {
+    var preview = dialog.querySelector("[data-pred-preview]");
+    if (!preview) return;
+    var built = buildPredicate();
+    preview.textContent = built || "—";
+  }
+  ["data-pred-min-czk", "data-pred-min-eur", "data-pred-min-qty", "data-pred-require-skus"].forEach(function (attr) {
+    var el = dialog.querySelector("[" + attr + "]");
+    if (!el) return;
+    el.addEventListener("input", refreshPredicatePreview);
+    el.addEventListener("change", refreshPredicatePreview);
+  });
+  var applyPred = dialog.querySelector("[data-pred-apply]");
+  if (applyPred) {
+    applyPred.addEventListener("click", function () {
+      var target = dialog.querySelector("[data-pred-target]");
+      var built = buildPredicate();
+      if (target && built) target.value = built;
+      refreshPredicatePreview();
+    });
+  }
+  refreshPredicatePreview();
 
   var stockBody = dialog.querySelector("[data-stock-body]");
   var stockEmpty = dialog.querySelector("[data-stock-empty]");
-  function ensureStockRow(sku, name) {
+  var pastRates = {{ (modal.sales_rates or {}) | tojson }};
+  function formatRate(value) {
+    if (value === null || value === undefined || value === "") return "—";
+    return Number(value).toFixed(2);
+  }
+  function ensureStockRow(sku) {
     if (!stockBody || !sku) return;
-    if (stockBody.querySelector('[data-stock-row="' + sku.replace(/"/g, '\\"') + '"]')) return;
+    var safe = sku.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    if (stockBody.querySelector('[data-stock-row="' + safe + '"]')) return;
     var tr = document.createElement("tr");
     tr.setAttribute("data-stock-row", sku);
     tr.innerHTML =
       '<td><span class="mono"></span><input type="hidden" name="stock_sku" value=""></td>' +
-      '<td><input name="stock_units" type="text" maxlength="40"></td>' +
-      '<td><input name="stock_uplift_line" type="text" maxlength="40" placeholder="default"></td>' +
-      '<td><input name="stock_ask" type="text" maxlength="40" placeholder="optional"></td>';
+      '<td class="mono" data-past-cell>—</td>' +
+      '<td><input name="stock_units" type="text" maxlength="40" placeholder="auto"></td>' +
+      '<td><input name="stock_uplift_line" type="text" maxlength="40" placeholder="{{ modal.default_uplift or "1.3" }}"></td>' +
+      '<td><input name="stock_ask" type="text" maxlength="40" placeholder="optional"></td>' +
+      '<td class="mono" data-est-cell>TBD</td>';
     tr.querySelector(".mono").textContent = sku;
     tr.querySelector('input[name="stock_sku"]').value = sku;
+    var past = pastRates[sku];
+    if (past !== undefined && past !== null) {
+      tr.querySelector("[data-past-cell]").textContent = formatRate(past);
+    }
     stockBody.appendChild(tr);
     if (stockEmpty) stockEmpty.hidden = true;
   }
   function removeStockRow(sku) {
     if (!stockBody) return;
-    var row = stockBody.querySelector('[data-stock-row="' + sku.replace(/"/g, '\\"') + '"]');
+    var safe = sku.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    var row = stockBody.querySelector('[data-stock-row="' + safe + '"]');
     if (row) row.remove();
     if (stockEmpty) stockEmpty.hidden = !!stockBody.querySelector("[data-stock-row]");
   }
   if (stockEmpty && stockBody) stockEmpty.hidden = !!stockBody.querySelector("[data-stock-row]");
   dialog.querySelectorAll('input[name="scope_sku"]').forEach(function (box) {
     box.addEventListener("change", function () {
-      if (box.checked) ensureStockRow(box.value, box.getAttribute("data-sku-name"));
+      if (box.checked) ensureStockRow(box.value);
       else removeStockRow(box.value);
+      refreshPredicatePreview();
     });
   });
 })();

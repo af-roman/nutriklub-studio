@@ -236,3 +236,44 @@ def test_shared_products_are_named_on_an_overlap():
         welcome = get_activity(conn, first)
         shared = shared_product_ids(conn, welcome, list_activities(conn))
     assert shared == {second}
+
+
+def test_reading_matches_when_code_is_on_a_separate_line_without_sku():
+    """Commercetools exports discount codes as their own order line with no SKU."""
+    with session() as conn:
+        replace_orders(
+            conn,
+            [
+                line(order_id="ct1", line_id="sku", order_date="2026-03-05", sku="A", amount=200, promos=["WELCOME15"]),
+                line(
+                    order_id="ct1",
+                    line_id="code",
+                    order_date="2026-03-05",
+                    sku=None,
+                    amount=0,
+                    quantity=None,
+                    promos=["WELCOME15"],
+                ),
+                line(order_id="ct1", line_id="other", order_date="2026-02-02", sku="A", amount=100, promos=[]),
+            ],
+            meta(row_count=3),
+        )
+        activity_id = create_activity(
+            conn,
+            {
+                "name": "Welcome",
+                "activity_type": "cart_discount",
+                "status": "done",
+                "start_date": "2026-03-01",
+                "end_date": "2026-03-10",
+                "notes": "",
+                "baseline_start": "2026-02-01",
+                "baseline_end": "2026-02-05",
+            },
+            ["WELCOME15"],
+        )
+        score = score_activity(conn, get_activity(conn, activity_id))
+    assert score.state != "no_match"
+    assert score.figures
+    assert score.figures[0].revenue.total == 200
+    assert "no SKU on the matched rows" not in " ".join(score.notes)

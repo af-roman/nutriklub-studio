@@ -72,9 +72,14 @@
       {% endfor %}
     </tbody>
   </table>
+  <label class="asset-option" style="margin: 12px 0">
+    <input type="checkbox" name="amounts_in_cents" value="yes" checked>
+    <span>Divide amount and discount columns by 100 (Commercetools <span class="mono">centAmount</span>)</span>
+  </label>
+  <p class="fine">Uncheck only if the export already uses major currency units (e.g. 199.00 CZK).</p>
   <div class="commit-row">
     <button class="button" type="submit">Store orders</button>
-    <p class="fine">This replaces the orders already stored in Studio with this file.</p>
+    <p class="fine">This replaces the orders already stored in Studio with this file. Discount codes on separate order lines are attached to the SKU lines of the same order.</p>
   </div>
 </form>
 <script>

@@ -785,6 +785,32 @@ details.sheet summary::-webkit-details-marker { display: none; }
 }
 .offer-block { display: grid; gap: 8px; margin-bottom: 10px; }
 .offer-block[hidden] { display: none; }
+/* Author display rules beat the UA [hidden] stylesheet — force hide in the modal. */
+.activity-modal [hidden] { display: none !important; }
+.catalog-item[hidden] { display: none !important; }
+.predicate-builder {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  margin: 8px 0;
+  background: var(--parchment);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+.predicate-preview {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-word;
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--white);
+  border-radius: 4px;
+  min-height: 2.4em;
+}
+.catalog-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 720px) {
+  .catalog-filters { grid-template-columns: 1fr; }
+}
 .stock-table-wrap { overflow: auto; }
 .stock-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stock-table th {

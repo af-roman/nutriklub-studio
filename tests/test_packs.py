@@ -84,6 +84,30 @@ def test_stock_ask_formula():
     assert "Alpha" in stock["copy_text"]
 
 
+def test_stock_ask_uses_past_sales_when_units_blank():
+    activity = {
+        "name": "From sales",
+        "start_date": "2026-06-01",
+        "end_date": "2026-06-10",
+        "shops": "both",
+        "sku_lines": [
+            {"sku": "A", "units_per_day": "", "uplift": "", "ask_override": ""},
+        ],
+    }
+    products = [{"sku": "A", "name": "Alpha", "categories": ""}]
+    stock = build_stock_ask(
+        activity,
+        SETTINGS,
+        products,
+        sales_rates={"A": 4.0},
+        sales_window=("2026-05-01", "2026-05-28"),
+    )
+    # 4/day × 10 days × 1.5 uplift = 60
+    assert stock["lines"][0]["ask"] == 60
+    assert stock["lines"][0]["past_rate"] == 4.0
+    assert "past sales" in stock["lines"][0]["method"]
+
+
 def test_planning_packs_include_all_outputs(client):
     client.post(
         "/settings",

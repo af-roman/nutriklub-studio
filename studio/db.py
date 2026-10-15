@@ -187,6 +187,9 @@ def connect() -> sqlite3.Connection:
             WHERE activity_type IN ('discount_code', 'offer', 'bundle', 'campaign', 'other')
             """
         )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_promos_order ON order_promos(order_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_promos_norm ON order_promos(promo_key_norm)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lines_sku_date ON order_lines(sku, order_date)")
     return conn
 
 

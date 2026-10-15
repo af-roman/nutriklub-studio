@@ -279,7 +279,20 @@ def clear_pending() -> None:
             path.unlink()
 
 
-def apply_mapping(rows: list[dict], mapping: dict[str, str]) -> tuple[list[dict], int]:
+def _money(value: float | None, amounts_in_cents: bool) -> float | None:
+    if value is None:
+        return None
+    if amounts_in_cents:
+        return value / 100.0
+    return value
+
+
+def apply_mapping(
+    rows: list[dict],
+    mapping: dict[str, str],
+    *,
+    amounts_in_cents: bool = False,
+) -> tuple[list[dict], int]:
     merged: dict[tuple[str, str], dict] = {}
     skipped = 0
     for source in rows:
@@ -305,17 +318,50 @@ def apply_mapping(rows: list[dict], mapping: dict[str, str]) -> tuple[list[dict]
             "sku": cell("sku") or None,
             "product_name": cell("product_name") or None,
             "quantity": parse_number(cell("quantity")) if mapping.get("quantity") else None,
-            "amount": parse_number(cell("amount")) if mapping.get("amount") else None,
-            "discount_amount": parse_number(cell("discount_amount")) if mapping.get("discount_amount") else None,
+            "amount": _money(
+                parse_number(cell("amount")) if mapping.get("amount") else None,
+                amounts_in_cents,
+            ),
+            "discount_amount": _money(
+                parse_number(cell("discount_amount")) if mapping.get("discount_amount") else None,
+                amounts_in_cents,
+            ),
             "currency": (cell("currency") or "").upper() or None,
             "promos": split_promos(cell("promo_key")) if mapping.get("promo_key") else [],
         }
         key = (order_id, line_id)
         if key in merged:
             promos = merged[key]["promos"] + record["promos"]
-            merged[key].update(record)
+            # Prefer the row that carries a SKU when CT emits a separate discount-code line.
+            if not merged[key].get("sku") and record.get("sku"):
+                keep_promos = merged[key]["promos"]
+                merged[key].update(record)
+                promos = keep_promos + record["promos"]
+            else:
+                for field in ("sku", "product_name", "quantity", "amount", "discount_amount", "currency", "status"):
+                    if merged[key].get(field) in (None, "") and record.get(field) not in (None, ""):
+                        merged[key][field] = record[field]
+                if record.get("cancelled"):
+                    merged[key]["cancelled"] = True
             merged[key]["promos"] = split_promos("|".join(promos))
         else:
             merged[key] = record
+
+    # Commercetools often puts discount codes on a separate line without SKU.
+    # Attach those codes to every line of the same order that has a SKU.
+    by_order: dict[str, list[dict]] = {}
+    for record in merged.values():
+        by_order.setdefault(record["order_id"], []).append(record)
+    for order_rows in by_order.values():
+        order_promos: list[str] = []
+        for row in order_rows:
+            order_promos.extend(row.get("promos") or [])
+        order_promos = split_promos("|".join(order_promos))
+        if not order_promos:
+            continue
+        for row in order_rows:
+            if row.get("sku"):
+                row["promos"] = split_promos("|".join((row.get("promos") or []) + order_promos))
+
     built = list(merged.values())
     return built, skipped

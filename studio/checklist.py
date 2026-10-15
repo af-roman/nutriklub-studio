@@ -192,6 +192,7 @@ def build_checklist(activity: dict, settings: dict, products: list[dict] | None 
                     cart_extra = " Audience is registered users — set the customer group key in Settings, then add a customer-group predicate."
             if needs_code:
                 cart_extra += " Requires a discount code (create the cart discount first, then the code)."
+            cart_predicate = (offer.get("cart_predicate_note") or "").strip() or predicate
             add(
                 f"{target['label']}: {cart_kind} discount",
                 f"Merchant Center → Discounts → Cart discounts → Add. "
@@ -199,10 +200,10 @@ def build_checklist(activity: dict, settings: dict, products: list[dict] | None 
                 f"Key suggestion: {cart_key}. "
                 f"Valid from {start or '…'} to {end or '…'}. "
                 f"Value: {value_hint}. "
-                f"Cart/product predicate: {predicate}. "
+                f"Cart predicate: {cart_predicate}. "
                 f"Sort order: {sort_order}. "
                 f"{scope} Currency: {currency}.{cart_extra}",
-                predicate,
+                cart_predicate,
             )
 
         if needs_code:
@@ -222,7 +223,7 @@ def build_checklist(activity: dict, settings: dict, products: list[dict] | None 
                 add(
                     f"{target['label']}: Discount code",
                     "This activity expects a code, but none is listed yet. "
-                    "Add the promo code under Measurement, save, then reopen this checklist. "
+                    "Add the code(s) under Offer detail, save, then reopen this checklist. "
                     "Cart discount must exist before you create the code (Merchant Center CSV import covers codes only).",
                 )
 
