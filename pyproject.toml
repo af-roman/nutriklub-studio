@@ -22,6 +22,9 @@ studio = "studio.__main__:main"
 [tool.setuptools.packages.find]
 include = ["studio*"]
 
+[tool.setuptools.package-data]
+studio = ["templates/*", "templates/**/*", "static/*", "static/**/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

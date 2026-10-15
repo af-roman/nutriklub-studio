@@ -1,10 +1,30 @@
 # Studio
 
-A local planning desk for the shop's marketing, promo, and discount activities. The plan comes first. Order history is evidence you consult after an activity has run.
+A campaign operating desk for an e-shop manager who plans promos without shop API access.
 
-Commercetools stays the source of truth. Studio keeps a disposable copy in `data/studio.db`.
+Commercetools stays the system of record for live discounts. Studio is where you:
 
-## Run
+1. **Plan** activities on a calendar (mechanic, offer, shops, SKUs).
+2. **Gate** them with campaign rules (blocked products, gaps, legal checklist).
+3. **Brief** other teams with planning packs (Merchant Center setup, stock ask, asset brief, legal).
+4. **Read** results after the fact from an order CSV import.
+
+Locally there is no login. On Fly.io, set `STUDIO_USER` / `STUDIO_PASSWORD` so the public URL uses HTTP basic auth. Only put order data on a host your company allows.
+
+## MVP scope
+
+| In MVP | Out of MVP (later) |
+|---|---|
+| Calendar + activity form | Live CT / SFMC / SAP APIs |
+| Campaign rules + warnings | Full SSO / multi-user roles |
+| Planning packs (setup, stock, assets, legal) | AI agent |
+| Catalog + order CSV import | Profitability without cost data |
+| Promo reading vs baseline | Automatic discount creation |
+| Fly.io hosting + basic auth | — |
+
+Stock asks use a transparent formula: `units/day × days × uplift`. That is a planning ask, not warehouse truth.
+
+## Run locally
 
 ```bash
 python3 -m venv .venv
@@ -12,37 +32,65 @@ python3 -m venv .venv
 .venv/bin/studio
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). There is no login. The app is meant to stay on your machine.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-## Run on GitHub (Codespaces)
+Optional: `STUDIO_HOST=0.0.0.0 STUDIO_PORT=8000` when exposing via a tunnel or Codespace.
 
-GitHub Pages cannot host this app (it needs a Python server and a local SQLite file). Use **Codespaces** instead:
+## Deploy on Fly.io (browser-only)
 
-1. Open the repository on GitHub.
-2. Click **Code → Codespaces → Create codespace on main**.
-3. Wait for the container to finish; Studio starts on port 8000.
-4. Open the forwarded port URL (ends with `app.github.dev`).
+You get a HTTPS URL. SQLite lives on a persistent volume at `/data`.
 
-Do not import real order exports into a shared Codespace unless that is an approved place for that data.
+### One-time setup
 
-## What a reading means
+1. Install the Fly CLI: https://fly.io/docs/flyctl/install/
+2. Sign up / log in: `fly auth login`
+3. From this repo:
 
-When an activity is marked done and has a promo code, Studio sums the orders in its dates that carry that code. The baseline is the same products in the baseline dates you set. Both sides are also shown per day, because the two windows are often different lengths.
+```bash
+fly apps create nutriklub-studio   # skip if the app name in fly.toml is free / already yours
+fly volumes create studio_data --region arn --size 1
+fly secrets set STUDIO_USER='your-login' STUDIO_PASSWORD='choose-a-long-password'
+fly deploy
+```
 
-Cancelled orders are left out when a status column is mapped. Mixed currencies are not added together. A code that never appears on an order is reported as not found. That is not scored as a failure.
+4. Open the URL Fly prints (also `fly apps open`).
 
-The comparison does not show that the activity caused the change. Overlapping activities that share products are named, and the orders are not split between them.
+`fly.toml` keeps one small machine running (`min_machines_running = 1`) so the first page load stays snappy. That uses more of the free allowance than a sleeping app; set `min_machines_running = 0` and `auto_stop_machines = "stop"` if you prefer cheaper cold starts.
+
+### Later deploys
+
+```bash
+fly deploy
+```
+
+### Useful commands
+
+```bash
+fly status
+fly logs
+fly ssh console
+fly volumes list
+```
+
+Database file on the volume: `/data/studio.db`.
+
+## Suggested workflow
+
+1. **Settings** — set CT keys, campaign rules (blocked SKUs/categories, min gap), import catalog.
+2. **New activity** — objective, mechanic, dates, shops, SKUs, offer.
+3. **Planning packs** (sidebar) — copy Setup into Merchant Center, Stock to warehouse, Assets to agency, Legal for yourself.
+4. **Mark done** + import orders — read the activity against its baseline.
 
 ## Import
 
-Export orders from Commercetools as CSV. Map the commercial columns once. Customer names, email addresses, phone numbers, and street addresses are removed before the file is kept, and they are never written into `studio.db`.
+Export orders from Commercetools as CSV. Map commercial columns once. Customer names, emails, phones, and street addresses are dropped before storage.
 
-Each import replaces the orders already stored. Copy the whole file from Commercetools each time so cancellations and later changes are included. Dates written as `03/04/2026` are read as 3 April 2026.
-
-`fixtures/orders_sample.csv` is a small stand-in for that export. It includes a `WELCOME15` code on 1–14 March 2026 and earlier orders of the same product on 1–4 February. A finished activity with that code and a baseline of 1–14 February should show revenue of 540.00 CZK, 35% above the baseline per day.
+Each import replaces stored orders. `fixtures/orders_sample.csv` is a small stand-in.
 
 ## Moving the desk
 
-Copy `data/studio.db` to another computer and start Studio there. Two copies edited separately will not merge.
+Copy `data/studio.db` (or `/data/studio.db` from Fly) to another computer. Two copies edited separately will not merge.
 
-Do not put that file on a shared or public drive until your company has agreed where this order data may live. There is no account system in this version.
+## GitHub Codespaces
+
+See `.devcontainer/`. For day-to-day browser use, prefer Fly.io over Codespaces.

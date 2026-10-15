@@ -4,6 +4,7 @@ import re
 from datetime import date
 
 from studio.constants import AUDIENCES, CODE_REQUIRED, DISCOUNT_KINDS, SHOP_MODELS, SHOPS, TYPES
+from studio.offers import offer_summary_lines, parse_offer_json, value_hint_from_offer
 
 
 def _slug(text: str) -> str:
@@ -76,6 +77,10 @@ def _predicate(settings: dict, products: list[dict]) -> str:
 
 
 def _value_hint(activity: dict, currency: str) -> str:
+    offer = parse_offer_json(activity.get("offer_json") or activity.get("offer") or {})
+    hinted = value_hint_from_offer(activity.get("activity_type") or "product_discount", offer, currency)
+    if hinted and "set" not in hinted.lower():
+        return hinted
     kind = activity.get("discount_kind") or ""
     value = (activity.get("discount_value") or "").strip()
     if not value:
@@ -100,9 +105,14 @@ def build_checklist(activity: dict, settings: dict, products: list[dict] | None 
     primary_code = codes[0] if codes else ""
     code_required = activity.get("code_required") or ""
     audience = activity.get("audience") or "all"
+    offer = parse_offer_json(activity.get("offer_json") or activity.get("offer") or {})
     targets = _shop_targets(activity, settings)
     predicate = _predicate(settings, products)
-    sort_order = (settings.get("default_sort_order") or "0.5").strip() or "0.5"
+    sort_order = (
+        (offer.get("sort_order") or "").strip()
+        or (settings.get("default_sort_order") or "0.5").strip()
+        or "0.5"
+    )
     group_key = (settings.get("registered_customer_group_key") or "").strip()
 
     cart_key = _fill_pattern(settings.get("key_pattern_cart") or "", slug=slug, code=primary_code, start=start)
@@ -130,6 +140,17 @@ def build_checklist(activity: dict, settings: dict, products: list[dict] | None 
             "Create or update the discount in each target below."
             if len(targets) > 1
             else "Create or update the discount for the target below."
+        ),
+    )
+    add(
+        "Offer summary",
+        " · ".join(
+            offer_summary_lines(
+                activity_type,
+                offer,
+                code_required=code_required,
+                audience=audience,
+            )
         ),
     )
 

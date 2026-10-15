@@ -190,4 +190,5 @@ def test_checklist_for_registered_cart_with_code():
     assert any("Cart discount" in title for title in titles)
     assert any("Discount code MEMBER10" in title for title in titles)
     assert checklist["predicate"] == 'sku = "NK-001"'
-    assert "customer.customerGroup.key" in checklist["steps"][1]["detail"]
+    cart_step = next(step for step in checklist["steps"] if "Cart discount" in step["title"])
+    assert "customer.customerGroup.key" in cart_step["detail"]

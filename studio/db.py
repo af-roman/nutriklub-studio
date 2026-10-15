@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS activities (
     product_scope TEXT NOT NULL DEFAULT '',
     code_required TEXT NOT NULL DEFAULT '',
     audience TEXT NOT NULL DEFAULT 'all',
+    objective TEXT NOT NULL DEFAULT '',
+    stock_units_per_day TEXT NOT NULL DEFAULT '',
+    stock_uplift TEXT NOT NULL DEFAULT '',
+    asset_notes TEXT NOT NULL DEFAULT '',
+    offer_json TEXT NOT NULL DEFAULT '{}',
+    asset_options TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -105,6 +111,9 @@ CREATE TABLE IF NOT EXISTS catalog_mappings (
 CREATE TABLE IF NOT EXISTS activity_skus (
     activity_id INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
     sku TEXT NOT NULL,
+    units_per_day TEXT NOT NULL DEFAULT '',
+    uplift TEXT NOT NULL DEFAULT '',
+    ask_override TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (activity_id, sku)
 );
 
@@ -147,10 +156,24 @@ def connect() -> sqlite3.Connection:
             ("product_scope", "TEXT NOT NULL DEFAULT ''"),
             ("code_required", "TEXT NOT NULL DEFAULT ''"),
             ("audience", "TEXT NOT NULL DEFAULT 'all'"),
+            ("objective", "TEXT NOT NULL DEFAULT ''"),
+            ("stock_units_per_day", "TEXT NOT NULL DEFAULT ''"),
+            ("stock_uplift", "TEXT NOT NULL DEFAULT ''"),
+            ("asset_notes", "TEXT NOT NULL DEFAULT ''"),
+            ("offer_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("asset_options", "TEXT NOT NULL DEFAULT ''"),
         ]
         for name, definition in additions:
             if name not in columns:
                 conn.execute(f"ALTER TABLE activities ADD COLUMN {name} {definition}")
+        sku_columns = {row["name"] for row in conn.execute("PRAGMA table_info(activity_skus)")}
+        for name, definition in [
+            ("units_per_day", "TEXT NOT NULL DEFAULT ''"),
+            ("uplift", "TEXT NOT NULL DEFAULT ''"),
+            ("ask_override", "TEXT NOT NULL DEFAULT ''"),
+        ]:
+            if name not in sku_columns:
+                conn.execute(f"ALTER TABLE activity_skus ADD COLUMN {name} {definition}")
         conn.execute(
             """
             UPDATE activities SET activity_type = CASE activity_type
@@ -188,16 +211,30 @@ def _hydrate(conn: sqlite3.Connection, rows) -> list[dict]:
     ids = [item["id"] for item in items]
     placeholders = ",".join("?" for _ in ids)
     keys: dict[int, list[str]] = {}
-    skus: dict[int, list[str]] = {}
+    sku_lines: dict[int, list[dict]] = {}
     query = f"SELECT activity_id, promo_key FROM activity_keys WHERE activity_id IN ({placeholders}) ORDER BY promo_key"
     for row in conn.execute(query, ids):
         keys.setdefault(row["activity_id"], []).append(row["promo_key"])
-    sku_query = f"SELECT activity_id, sku FROM activity_skus WHERE activity_id IN ({placeholders}) ORDER BY sku"
+    sku_query = (
+        f"SELECT activity_id, sku, units_per_day, uplift, ask_override "
+        f"FROM activity_skus WHERE activity_id IN ({placeholders}) ORDER BY sku"
+    )
     for row in conn.execute(sku_query, ids):
-        skus.setdefault(row["activity_id"], []).append(row["sku"])
+        sku_lines.setdefault(row["activity_id"], []).append(
+            {
+                "sku": row["sku"],
+                "units_per_day": row["units_per_day"] or "",
+                "uplift": row["uplift"] or "",
+                "ask_override": row["ask_override"] or "",
+            }
+        )
     for item in items:
+        lines = sku_lines.get(item["id"], [])
         item["keys"] = keys.get(item["id"], [])
-        item["skus"] = skus.get(item["id"], [])
+        item["sku_lines"] = lines
+        item["skus"] = [line["sku"] for line in lines]
+        item["offer_json"] = item.get("offer_json") or "{}"
+        item["asset_options"] = item.get("asset_options") or ""
     return items
 
 
@@ -238,15 +275,44 @@ def _replace_keys(conn: sqlite3.Connection, activity_id: int, keys: list[str]) -
     )
 
 
-def _replace_skus(conn: sqlite3.Connection, activity_id: int, skus: list[str]) -> None:
+def _normalize_sku_lines(skus) -> list[dict]:
+    lines: list[dict] = []
+    seen: set[str] = set()
+    for item in skus or []:
+        if isinstance(item, str):
+            sku = item.strip()
+            line = {"sku": sku, "units_per_day": "", "uplift": "", "ask_override": ""}
+        else:
+            sku = (item.get("sku") or "").strip()
+            line = {
+                "sku": sku,
+                "units_per_day": (item.get("units_per_day") or "").strip(),
+                "uplift": (item.get("uplift") or "").strip(),
+                "ask_override": (item.get("ask_override") or "").strip(),
+            }
+        if not sku or sku.casefold() in seen:
+            continue
+        seen.add(sku.casefold())
+        lines.append(line)
+    return lines
+
+
+def _replace_skus(conn: sqlite3.Connection, activity_id: int, skus) -> None:
+    lines = _normalize_sku_lines(skus)
     conn.execute("DELETE FROM activity_skus WHERE activity_id = ?", (activity_id,))
     conn.executemany(
-        "INSERT INTO activity_skus (activity_id, sku) VALUES (?, ?)",
-        [(activity_id, sku) for sku in skus],
+        """
+        INSERT INTO activity_skus (activity_id, sku, units_per_day, uplift, ask_override)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [
+            (activity_id, line["sku"], line["units_per_day"], line["uplift"], line["ask_override"])
+            for line in lines
+        ],
     )
 
 
-def create_activity(conn: sqlite3.Connection, fields: dict, keys: list[str], skus: list[str] | None = None) -> int:
+def create_activity(conn: sqlite3.Connection, fields: dict, keys: list[str], skus=None) -> int:
     stamp = now_stamp()
     cursor = conn.execute(
         """
@@ -254,8 +320,10 @@ def create_activity(conn: sqlite3.Connection, fields: dict, keys: list[str], sku
             name, activity_type, status, start_date, end_date, notes,
             baseline_start, baseline_end, shops,
             discount_kind, discount_value, product_scope, code_required, audience,
+            objective, stock_units_per_day, stock_uplift, asset_notes,
+            offer_json, asset_options,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             fields["name"],
@@ -272,6 +340,12 @@ def create_activity(conn: sqlite3.Connection, fields: dict, keys: list[str], sku
             fields.get("product_scope") or "",
             fields.get("code_required") or "",
             fields.get("audience") or "all",
+            fields.get("objective") or "",
+            fields.get("stock_units_per_day") or "",
+            fields.get("stock_uplift") or "",
+            fields.get("asset_notes") or "",
+            fields.get("offer_json") or "{}",
+            fields.get("asset_options") or "",
             stamp,
             stamp,
         ),
@@ -295,7 +369,10 @@ def update_activity(
             name = ?, activity_type = ?, status = ?, start_date = ?, end_date = ?,
             notes = ?, baseline_start = ?, baseline_end = ?, shops = ?,
             discount_kind = ?, discount_value = ?, product_scope = ?,
-            code_required = ?, audience = ?, updated_at = ?
+            code_required = ?, audience = ?,
+            objective = ?, stock_units_per_day = ?, stock_uplift = ?, asset_notes = ?,
+            offer_json = ?, asset_options = ?,
+            updated_at = ?
         WHERE id = ?
         """,
         (
@@ -313,6 +390,12 @@ def update_activity(
             fields.get("product_scope") or "",
             fields.get("code_required") or "",
             fields.get("audience") or "all",
+            fields.get("objective") or "",
+            fields.get("stock_units_per_day") or "",
+            fields.get("stock_uplift") or "",
+            fields.get("asset_notes") or "",
+            fields.get("offer_json") or "{}",
+            fields.get("asset_options") or "",
             now_stamp(),
             activity_id,
         ),
@@ -358,8 +441,19 @@ def duplicate_activity(conn: sqlite3.Connection, activity_id: int) -> int | None
         "product_scope": source.get("product_scope") or "",
         "code_required": source.get("code_required") or "",
         "audience": source.get("audience") or "all",
+        "objective": source.get("objective") or "",
+        "stock_units_per_day": source.get("stock_units_per_day") or "",
+        "stock_uplift": source.get("stock_uplift") or "",
+        "asset_notes": source.get("asset_notes") or "",
+        "offer_json": source.get("offer_json") or "{}",
+        "asset_options": source.get("asset_options") or "",
     }
-    return create_activity(conn, fields, list(source["keys"]), list(source.get("skus") or []))
+    return create_activity(
+        conn,
+        fields,
+        list(source["keys"]),
+        list(source.get("sku_lines") or source.get("skus") or []),
+    )
 
 
 def delete_activity(conn: sqlite3.Connection, activity_id: int) -> None:

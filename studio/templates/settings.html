@@ -6,7 +6,7 @@
     <h1>Settings</h1>
     <a class="text-link" href="/?year={{ year }}">Return to plan</a>
   </div>
-  <p class="lede">Store the Commercetools values you reuse every time, and import the product list so an activity can build a Merchant Center checklist with real SKUs.</p>
+  <p class="lede">Campaign rules, Commercetools defaults, and the product catalog that power planning packs on every activity.</p>
 </section>
 
 {% if saved %}
@@ -19,7 +19,36 @@
   <p class="note" role="alert">{{ error }}</p>
 {% endif %}
 
-<form class="sheet" method="post" action="/settings">
+<form method="post" action="/settings">
+<section class="sheet">
+  <p class="kicker">Campaign rules</p>
+  <p class="fine">These gate activities before you brief stock, assets, or Merchant Center. One line per item.</p>
+
+  <label for="blocked_skus">Blocked SKUs</label>
+  <textarea id="blocked_skus" name="blocked_skus" rows="3" maxlength="5000" placeholder="One SKU per line">{{ settings.blocked_skus }}</textarea>
+
+  <label for="blocked_categories">Blocked categories</label>
+  <textarea id="blocked_categories" name="blocked_categories" rows="3" maxlength="5000" placeholder="Category keys or names, one per line">{{ settings.blocked_categories }}</textarea>
+
+  <div class="split">
+    <div>
+      <label for="min_gap_days">Minimum gap between promos on the same SKUs (days)</label>
+      <input id="min_gap_days" name="min_gap_days" type="text" value="{{ settings.min_gap_days }}" maxlength="20">
+    </div>
+    <div>
+      <label for="default_stock_uplift">Default stock uplift factor</label>
+      <input id="default_stock_uplift" name="default_stock_uplift" type="text" value="{{ settings.default_stock_uplift }}" maxlength="40" placeholder="1.3">
+    </div>
+  </div>
+
+  <label for="legal_checklist">Legal / compliance checklist</label>
+  <textarea id="legal_checklist" name="legal_checklist" rows="5" maxlength="5000">{{ settings.legal_checklist }}</textarea>
+
+  <label for="stacking_notes">Stacking / coexistence notes</label>
+  <textarea id="stacking_notes" name="stacking_notes" rows="3" maxlength="2000" placeholder="e.g. Do not combine cart codes with free shipping in the same week">{{ settings.stacking_notes }}</textarea>
+</section>
+
+<section class="sheet">
   <p class="kicker">Commercetools project</p>
   <p class="fine">These values fill the setup checklist on each activity. Nothing is sent to Commercetools from Studio.</p>
 
@@ -99,6 +128,7 @@
   <textarea id="notes" name="notes" rows="3" maxlength="2000" placeholder="Anything the checklist should always remind you of">{{ settings.notes }}</textarea>
 
   <button class="button" type="submit">Save settings</button>
+</section>
 </form>
 
 <section class="sheet">

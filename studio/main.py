@@ -16,8 +16,8 @@ from studio.catalog import (
     load_catalog_pending_rows,
     store_catalog_upload,
 )
-from studio.checklist import build_checklist
 from studio.constants import (
+    ASSET_OPTIONS,
     AUDIENCES,
     CATALOG_FIELDS,
     CODE_REQUIRED,
@@ -29,6 +29,14 @@ from studio.constants import (
     SHOPS,
     STATUSES,
     TYPES,
+)
+from studio.offers import (
+    GIFT_MODES,
+    MULTIBUY_MODES,
+    SHIPPING_MODES,
+    VALUE_MODES,
+    blank_offer,
+    parse_offer_json,
 )
 from studio.db import (
     catalog_count,
@@ -52,8 +60,10 @@ from studio.db import (
     update_activity,
     update_activity_dates,
 )
+from studio.auth import BasicAuthMiddleware
 from studio.formatting import format_count, format_delta, format_money, format_range, format_timestamp
-from studio.forms import FormError, normalize_type, parse_activity_form, parse_schedule
+from studio.forms import FormError, normalize_type, parse_activity_form, parse_keys, parse_schedule
+from studio.packs import build_planning_packs
 from studio.importer import (
     ImportProblem,
     apply_mapping,
@@ -89,9 +99,20 @@ templates.env.globals["DISCOUNT_KINDS"] = DISCOUNT_KINDS
 templates.env.globals["AUDIENCES"] = AUDIENCES
 templates.env.globals["CODE_REQUIRED"] = CODE_REQUIRED
 templates.env.globals["SHOP_MODELS"] = SHOP_MODELS
+templates.env.globals["ASSET_OPTIONS"] = ASSET_OPTIONS
+templates.env.globals["VALUE_MODES"] = VALUE_MODES
+templates.env.globals["SHIPPING_MODES"] = SHIPPING_MODES
+templates.env.globals["MULTIBUY_MODES"] = MULTIBUY_MODES
+templates.env.globals["GIFT_MODES"] = GIFT_MODES
 
 app = FastAPI(title="Studio")
+app.add_middleware(BasicAuthMiddleware)
 app.mount("/static", StaticFiles(directory=PACKAGE / "static"), name="static")
+
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 
 def chosen_year(raw, today: date) -> int:
@@ -179,6 +200,8 @@ def render(request: Request, name: str, conn, **ctx):
 
 
 def form_from_activity(activity: dict) -> dict:
+    offer = parse_offer_json(activity.get("offer_json"))
+    asset_keys = [key for key in (activity.get("asset_options") or "").split(",") if key.strip()]
     return {
         "name": activity["name"],
         "activity_type": activity["activity_type"],
@@ -196,6 +219,13 @@ def form_from_activity(activity: dict) -> dict:
         "code_required": activity.get("code_required") or "",
         "audience": activity.get("audience") or "all",
         "scope_skus": list(activity.get("skus") or []),
+        "sku_lines": list(activity.get("sku_lines") or []),
+        "objective": activity.get("objective") or "",
+        "stock_units_per_day": activity.get("stock_units_per_day") or "",
+        "stock_uplift": activity.get("stock_uplift") or "",
+        "asset_notes": activity.get("asset_notes") or "",
+        "offer": offer,
+        "asset_option_keys": asset_keys,
     }
 
 
@@ -217,11 +247,20 @@ def blank_form() -> dict:
         "code_required": "",
         "audience": "all",
         "scope_skus": [],
+        "sku_lines": [],
+        "objective": "",
+        "stock_units_per_day": "",
+        "stock_uplift": "",
+        "asset_notes": "",
+        "offer": blank_offer(),
+        "asset_option_keys": [],
     }
 
 
 def _activity_products(conn, form: dict) -> list[dict]:
     selected = list(form.get("scope_skus") or [])
+    if not selected and form.get("sku_lines"):
+        selected = [line.get("sku") for line in form["sku_lines"] if line.get("sku")]
     if not selected:
         return []
     shops = form.get("shops") or "both"
@@ -230,34 +269,37 @@ def _activity_products(conn, form: dict) -> list[dict]:
     products = []
     seen: set[str] = set()
     for sku in selected:
-        key = sku.casefold()
-        if key in seen or key not in by_sku:
+        key = (sku or "").casefold()
+        if not key or key in seen or key not in by_sku:
             continue
         seen.add(key)
         products.append(by_sku[key])
     return products
 
 
-def _modal_checklist(conn, form: dict) -> dict:
-    from studio.forms import parse_keys
-
+def _modal_packs(conn, form: dict, activity_id: int | None = None) -> dict:
     settings = get_settings(conn)
     products = _activity_products(conn, form)
     payload = dict(form)
-    if "keys" not in payload:
-        payload["keys"] = parse_keys(form.get("match_keys") or "")
-    checklist = build_checklist(payload, settings, products)
-    notes = (settings.get("notes") or "").strip()
-    if notes:
-        checklist["steps"].append(
-            {
-                "n": len(checklist["steps"]) + 1,
-                "title": "Project note",
-                "detail": notes,
-                "copy": "",
-            }
-        )
-    return checklist
+    if activity_id is not None:
+        payload["id"] = activity_id
+    payload["keys"] = parse_keys(form.get("match_keys") or "")
+    payload["sku_lines"] = list(form.get("sku_lines") or [])
+    if not payload["sku_lines"] and form.get("scope_skus"):
+        payload["sku_lines"] = [
+            {"sku": sku, "units_per_day": "", "uplift": "", "ask_override": ""}
+            for sku in form["scope_skus"]
+        ]
+    payload["skus"] = [line["sku"] for line in payload["sku_lines"]]
+    payload["offer_json"] = form.get("offer_json") or ""
+    if form.get("offer") and not payload["offer_json"]:
+        from studio.offers import offer_to_json
+
+        payload["offer"] = form["offer"]
+        payload["offer_json"] = offer_to_json(form["offer"])
+    payload["asset_options"] = ",".join(form.get("asset_option_keys") or [])
+    others = decorate(list_activities(conn))
+    return build_planning_packs(payload, settings, products, others)
 
 
 def group_by_month(activities: list[dict], year: int) -> list[dict]:
@@ -330,6 +372,7 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
     catalog = list_catalog(conn)
     if token == "new":
         form = form or blank_form()
+        packs = _modal_packs(conn, form)
         return {
             "form": form,
             "error": error,
@@ -338,7 +381,8 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
             "overlaps": [],
             "similar": [],
             "catalog": catalog,
-            "checklist": _modal_checklist(conn, form),
+            "packs": packs,
+            "checklist": packs["checklist"],
         }
     try:
         activity_id = int(token)
@@ -352,6 +396,7 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
     similar = similar_view(conn, activity, others, year, view, shop)
     score = score_activity(conn, activity) if activity["status"] == "done" else None
     form = form or form_from_activity(activity)
+    packs = _modal_packs(conn, form, activity_id=activity["id"])
     return {
         "form": form,
         "error": error,
@@ -360,7 +405,8 @@ def build_modal(conn, token: str | None, year: int, view: str, shop: str, form=N
         "overlaps": overlaps,
         "similar": similar,
         "catalog": catalog,
-        "checklist": _modal_checklist(conn, form),
+        "packs": packs,
+        "checklist": packs["checklist"],
     }
 
 
@@ -487,85 +533,91 @@ def _save(conn, form: dict, activity_id: int | None) -> int:
     return activity_id
 
 
-def _form_from_request(
-    name: str,
-    activity_type: str,
-    status: str,
-    start_date: str,
-    end_date: str,
-    notes: str,
-    baseline_start: str,
-    baseline_end: str,
-    match_keys: str,
-    shops: str,
-    discount_kind: str = "",
-    discount_value: str = "",
-    product_scope: str = "",
-    code_required: str = "",
-    audience: str = "all",
-    scope_skus: list[str] | None = None,
-) -> dict:
+def _multi(form_data, key: str) -> list[str]:
+    return [str(value) for value in form_data.getlist(key)]
+
+
+def _one(form_data, key: str, default: str = "") -> str:
+    value = form_data.get(key)
+    if value is None:
+        return default
+    return str(value)
+
+
+async def _activity_form_from_http(request: Request) -> tuple[dict, str, str, str]:
+    form_data = await request.form()
+    offer = blank_offer()
+    for key in offer:
+        offer[key] = _one(form_data, f"offer_{key}")
+    form = {
+        "name": _one(form_data, "name"),
+        "activity_type": _one(form_data, "activity_type"),
+        "status": _one(form_data, "status", "draft"),
+        "start_date": _one(form_data, "start_date"),
+        "end_date": _one(form_data, "end_date"),
+        "notes": _one(form_data, "notes"),
+        "baseline_start": _one(form_data, "baseline_start"),
+        "baseline_end": _one(form_data, "baseline_end"),
+        "match_keys": _one(form_data, "match_keys"),
+        "shops": _one(form_data, "shops", "both"),
+        "product_scope": _one(form_data, "product_scope"),
+        "code_required": _one(form_data, "code_required"),
+        "audience": _one(form_data, "audience", "all"),
+        "scope_skus": _multi(form_data, "scope_sku"),
+        "stock_sku": _multi(form_data, "stock_sku"),
+        "stock_units": _multi(form_data, "stock_units"),
+        "stock_uplift_line": _multi(form_data, "stock_uplift_line"),
+        "stock_ask": _multi(form_data, "stock_ask"),
+        "objective": _one(form_data, "objective"),
+        "asset_notes": _one(form_data, "asset_notes"),
+        "asset_option": _multi(form_data, "asset_option"),
+        "offer": offer,
+    }
+    for key, value in offer.items():
+        form[f"offer_{key}"] = value
+    year = _one(form_data, "year")
+    return_view = _one(form_data, "return_view", "calendar")
+    return_shop = _one(form_data, "return_shop", "all")
+    return form, year, return_view, return_shop
+
+
+def _form_for_redisplay(form: dict) -> dict:
+    """Shape submitted form data for the modal after a validation error."""
+    offer = form.get("offer") or extract_offer_helper(form)
+    sku_lines = []
+    units = form.get("stock_units") or []
+    uplifts = form.get("stock_uplift_line") or []
+    asks = form.get("stock_ask") or []
+    for index, sku in enumerate(form.get("stock_sku") or form.get("scope_skus") or []):
+        sku_lines.append(
+            {
+                "sku": sku,
+                "units_per_day": units[index] if index < len(units) else "",
+                "uplift": uplifts[index] if index < len(uplifts) else "",
+                "ask_override": asks[index] if index < len(asks) else "",
+            }
+        )
+    if not sku_lines:
+        for sku in form.get("scope_skus") or []:
+            sku_lines.append({"sku": sku, "units_per_day": "", "uplift": "", "ask_override": ""})
     return {
-        "name": name,
-        "activity_type": activity_type,
-        "status": status,
-        "start_date": start_date,
-        "end_date": end_date,
-        "notes": notes,
-        "baseline_start": baseline_start,
-        "baseline_end": baseline_end,
-        "match_keys": match_keys,
-        "shops": shops,
-        "discount_kind": discount_kind,
-        "discount_value": discount_value,
-        "product_scope": product_scope,
-        "code_required": code_required,
-        "audience": audience,
-        "scope_skus": list(scope_skus or []),
+        **form,
+        "offer": offer,
+        "sku_lines": sku_lines,
+        "scope_skus": form.get("scope_skus") or [line["sku"] for line in sku_lines],
+        "asset_option_keys": form.get("asset_option") or form.get("asset_option_keys") or [],
     }
 
 
+def extract_offer_helper(form: dict) -> dict:
+    from studio.offers import extract_offer_from_form
+
+    return extract_offer_from_form(form)
+
+
 @app.post("/activities")
-def create_activity_route(
-    request: Request,
-    name: str = Form(""),
-    activity_type: str = Form(""),
-    status: str = Form("draft"),
-    start_date: str = Form(""),
-    end_date: str = Form(""),
-    notes: str = Form(""),
-    baseline_start: str = Form(""),
-    baseline_end: str = Form(""),
-    match_keys: str = Form(""),
-    shops: str = Form("both"),
-    discount_kind: str = Form(""),
-    discount_value: str = Form(""),
-    product_scope: str = Form(""),
-    code_required: str = Form(""),
-    audience: str = Form("all"),
-    scope_sku: List[str] = Form(default=[]),
-    year: str = Form(""),
-    return_view: str = Form("calendar"),
-    return_shop: str = Form("all"),
-):
-    form = _form_from_request(
-        name,
-        activity_type,
-        status,
-        start_date,
-        end_date,
-        notes,
-        baseline_start,
-        baseline_end,
-        match_keys,
-        shops,
-        discount_kind,
-        discount_value,
-        product_scope,
-        code_required,
-        audience,
-        scope_sku,
-    )
+async def create_activity_route(request: Request):
+    form, year, return_view, return_shop = await _activity_form_from_http(request)
     selected = chosen_year(year, date.today())
     view = normalize_view(return_view)
     shop = normalize_shop(return_shop)
@@ -580,7 +632,7 @@ def create_activity_route(
                 view=view,
                 shop=shop,
                 modal_token="new",
-                form=form,
+                form=_form_for_redisplay(form),
                 error=exc.message,
             )
         return RedirectResponse(plan_path(selected, view, shop, activity_id), status_code=303)
@@ -629,47 +681,8 @@ def schedule_activity_route(
 
 
 @app.post("/activities/{activity_id}")
-def save_activity_route(
-    request: Request,
-    activity_id: int,
-    name: str = Form(""),
-    activity_type: str = Form(""),
-    status: str = Form("draft"),
-    start_date: str = Form(""),
-    end_date: str = Form(""),
-    notes: str = Form(""),
-    baseline_start: str = Form(""),
-    baseline_end: str = Form(""),
-    match_keys: str = Form(""),
-    shops: str = Form("both"),
-    discount_kind: str = Form(""),
-    discount_value: str = Form(""),
-    product_scope: str = Form(""),
-    code_required: str = Form(""),
-    audience: str = Form("all"),
-    scope_sku: List[str] = Form(default=[]),
-    year: str = Form(""),
-    return_view: str = Form("calendar"),
-    return_shop: str = Form("all"),
-):
-    form = _form_from_request(
-        name,
-        activity_type,
-        status,
-        start_date,
-        end_date,
-        notes,
-        baseline_start,
-        baseline_end,
-        match_keys,
-        shops,
-        discount_kind,
-        discount_value,
-        product_scope,
-        code_required,
-        audience,
-        scope_sku,
-    )
+async def save_activity_route(request: Request, activity_id: int):
+    form, year, return_view, return_shop = await _activity_form_from_http(request)
     view = normalize_view(return_view)
     shop = normalize_shop(return_shop)
     with session() as conn:
@@ -687,7 +700,7 @@ def save_activity_route(
                 view=view,
                 shop=shop,
                 modal_token=str(activity_id),
-                form=form,
+                form=_form_for_redisplay(form),
                 error=exc.message,
             )
         return RedirectResponse(plan_path(selected, view, shop, activity_id), status_code=303)
@@ -771,11 +784,29 @@ def save_settings_route(
     key_pattern_product: str = Form(""),
     default_sort_order: str = Form(""),
     notes: str = Form(""),
+    blocked_skus: str = Form(""),
+    blocked_categories: str = Form(""),
+    min_gap_days: str = Form("7"),
+    legal_checklist: str = Form(""),
+    stacking_notes: str = Form(""),
+    default_stock_uplift: str = Form(""),
 ):
     if shop_model not in SHOP_MODELS:
         shop_model = "stores"
     if predicate_style not in {"sku", "product_key"}:
         predicate_style = "sku"
+    gap = (min_gap_days or "").strip() or DEFAULT_SETTINGS["min_gap_days"]
+    try:
+        gap_n = max(0, int(float(gap)))
+        gap = str(gap_n)
+    except ValueError:
+        gap = DEFAULT_SETTINGS["min_gap_days"]
+    uplift = (default_stock_uplift or "").strip() or DEFAULT_SETTINGS["default_stock_uplift"]
+    try:
+        if float(uplift.replace(",", ".")) < 0:
+            uplift = DEFAULT_SETTINGS["default_stock_uplift"]
+    except ValueError:
+        uplift = DEFAULT_SETTINGS["default_stock_uplift"]
     values = {
         "shop_model": shop_model,
         "cz_key": cz_key.strip()[:120],
@@ -791,6 +822,12 @@ def save_settings_route(
         "key_pattern_product": (key_pattern_product.strip() or DEFAULT_SETTINGS["key_pattern_product"])[:120],
         "default_sort_order": (default_sort_order.strip() or DEFAULT_SETTINGS["default_sort_order"])[:20],
         "notes": notes.strip()[:2000],
+        "blocked_skus": blocked_skus.strip()[:5000],
+        "blocked_categories": blocked_categories.strip()[:5000],
+        "min_gap_days": gap[:20],
+        "legal_checklist": legal_checklist.strip()[:5000],
+        "stacking_notes": stacking_notes.strip()[:2000],
+        "default_stock_uplift": uplift[:40],
     }
     with session() as conn:
         save_settings(conn, values)

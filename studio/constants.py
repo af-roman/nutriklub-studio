@@ -81,6 +81,19 @@ SHOP_MODELS = {
     "projects": "Two separate projects (CZ and SK)",
 }
 
+ASSET_OPTIONS = {
+    "homepage_cz": "Homepage banner — CZ",
+    "homepage_sk": "Homepage banner — SK",
+    "plp_tile": "Category / PLP tile",
+    "pdp_strip": "Product detail strip",
+    "cart_banner": "Cart / checkout banner",
+    "email_module": "Email / SFMC module",
+    "social_cutdown": "Social cutdown",
+    "legal_disclaimer": "Include legal disclaimer line",
+    "price_from_claim": "Include “from / price” claim check",
+    "code_callout": "Show promo code callout",
+}
+
 DEFAULT_SETTINGS = {
     "shop_model": "stores",
     "cz_key": "",
@@ -96,4 +109,15 @@ DEFAULT_SETTINGS = {
     "key_pattern_product": "product-{slug}-{yyyy-mm}",
     "default_sort_order": "0.5",
     "notes": "",
+    "blocked_skus": "",
+    "blocked_categories": "",
+    "min_gap_days": "7",
+    "legal_checklist": (
+        "Confirm the offer text matches the mechanic and rate.\n"
+        "Confirm no blocked products or categories are included.\n"
+        "Confirm the gap to the previous promo on the same SKUs is acceptable.\n"
+        "Confirm CZ and SK copy / pricing are correct for each shop."
+    ),
+    "stacking_notes": "",
+    "default_stock_uplift": "1.3",
 }

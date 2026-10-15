@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from studio.constants import AUDIENCES, CODE_REQUIRED, DISCOUNT_KINDS, SHOPS, STATUSES, TYPE_ALIASES, TYPES
+from studio.constants import ASSET_OPTIONS, AUDIENCES, CODE_REQUIRED, SHOPS, STATUSES, TYPE_ALIASES, TYPES
+from studio.offers import extract_offer_from_form, offer_to_json, sync_legacy_fields
 
 
 class FormError(Exception):
@@ -47,7 +48,29 @@ def normalize_type(value: str) -> str:
     return TYPE_ALIASES.get(token, token)
 
 
-def parse_activity_form(form: dict) -> tuple[dict, list[str], list[str]]:
+def _as_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+def _optional_number(raw: str, label: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if len(text) > 40:
+        raise FormError(f"{label} needs to be shorter.")
+    try:
+        if float(text.replace(",", ".")) < 0:
+            raise FormError(f"{label} cannot be negative.")
+    except ValueError as exc:
+        raise FormError(f"{label} needs a number.") from exc
+    return text
+
+
+def parse_activity_form(form: dict) -> tuple[dict, list[str], list[dict]]:
     name = (form.get("name") or "").strip()
     if not name:
         raise FormError("Give the activity a name.")
@@ -84,14 +107,6 @@ def parse_activity_form(form: dict) -> tuple[dict, list[str], list[str]]:
     if len(notes) > 5000:
         raise FormError("The notes need to be 5,000 characters or fewer.")
 
-    discount_kind = (form.get("discount_kind") or "").strip()
-    if discount_kind not in DISCOUNT_KINDS:
-        raise FormError("Choose a discount kind, or leave it unset.")
-
-    discount_value = (form.get("discount_value") or "").strip()
-    if len(discount_value) > 80:
-        raise FormError("The discount value needs to be 80 characters or fewer.")
-
     product_scope = (form.get("product_scope") or "").strip()
     if len(product_scope) > 2000:
         raise FormError("The product range needs to be 2,000 characters or fewer.")
@@ -110,21 +125,66 @@ def parse_activity_form(form: dict) -> tuple[dict, list[str], list[str]]:
     if any(len(key) > 80 for key in keys):
         raise FormError("Each code needs to be 80 characters or fewer.")
 
-    raw_skus = form.get("scope_skus") or []
-    if isinstance(raw_skus, str):
-        raw_skus = [raw_skus]
-    skus: list[str] = []
-    seen_skus: set[str] = set()
-    for item in raw_skus:
-        sku = (item or "").strip()
-        if not sku or sku.casefold() in seen_skus:
+    scope_skus = _as_list(form.get("scope_skus"))
+    stock_skus = _as_list(form.get("stock_sku"))
+    stock_units = _as_list(form.get("stock_units"))
+    stock_uplifts = _as_list(form.get("stock_uplift_line"))
+    stock_asks = _as_list(form.get("stock_ask"))
+
+    by_sku: dict[str, dict] = {}
+    for sku in scope_skus:
+        token = (sku or "").strip()
+        if not token or len(token) > 120:
+            if token and len(token) > 120:
+                raise FormError("Each selected SKU needs to be 120 characters or fewer.")
             continue
-        if len(sku) > 120:
-            raise FormError("Each selected SKU needs to be 120 characters or fewer.")
-        seen_skus.add(sku.casefold())
-        skus.append(sku)
-    if len(skus) > 200:
+        by_sku[token.casefold()] = {
+            "sku": token,
+            "units_per_day": "",
+            "uplift": "",
+            "ask_override": "",
+        }
+
+    for index, sku in enumerate(stock_skus):
+        token = (sku or "").strip()
+        if not token:
+            continue
+        key = token.casefold()
+        if key not in by_sku:
+            by_sku[key] = {"sku": token, "units_per_day": "", "uplift": "", "ask_override": ""}
+        units = stock_units[index] if index < len(stock_units) else ""
+        uplift = stock_uplifts[index] if index < len(stock_uplifts) else ""
+        ask = stock_asks[index] if index < len(stock_asks) else ""
+        by_sku[key]["units_per_day"] = _optional_number(units, f"Units/day for {token}")
+        by_sku[key]["uplift"] = _optional_number(uplift, f"Uplift for {token}")
+        by_sku[key]["ask_override"] = _optional_number(ask, f"Ask override for {token}")
+
+    sku_lines = list(by_sku.values())
+    if len(sku_lines) > 200:
         raise FormError("Select 200 SKUs or fewer.")
+
+    objective = (form.get("objective") or "").strip()
+    if len(objective) > 2000:
+        raise FormError("The objective needs to be 2,000 characters or fewer.")
+
+    asset_notes = (form.get("asset_notes") or "").strip()
+    if len(asset_notes) > 5000:
+        raise FormError("Asset notes need to be 5,000 characters or fewer.")
+
+    raw_assets = _as_list(form.get("asset_option"))
+    asset_keys = []
+    seen_assets = set()
+    for key in raw_assets:
+        token = (key or "").strip()
+        if not token or token not in ASSET_OPTIONS or token in seen_assets:
+            continue
+        seen_assets.add(token)
+        asset_keys.append(token)
+
+    offer = extract_offer_from_form(form)
+    discount_kind, discount_value = sync_legacy_fields(activity_type, offer, form)
+    if len(discount_value) > 120:
+        discount_value = discount_value[:120]
 
     fields = {
         "name": name,
@@ -141,8 +201,14 @@ def parse_activity_form(form: dict) -> tuple[dict, list[str], list[str]]:
         "product_scope": product_scope,
         "code_required": code_required,
         "audience": audience,
+        "objective": objective,
+        "stock_units_per_day": "",
+        "stock_uplift": "",
+        "asset_notes": asset_notes,
+        "offer_json": offer_to_json(offer),
+        "asset_options": ",".join(asset_keys),
     }
-    return fields, keys, skus
+    return fields, keys, sku_lines
 
 
 def parse_schedule(start_raw: str, end_raw: str) -> tuple[str, str]:

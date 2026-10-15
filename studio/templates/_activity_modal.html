@@ -73,34 +73,116 @@
               </div>
             </div>
 
-            <label for="notes">Intent</label>
-            <textarea id="notes" name="notes" rows="4" maxlength="5000" placeholder="What this activity is for">{{ modal.form.notes }}</textarea>
+            <label for="objective">Objective</label>
+            <textarea id="objective" name="objective" rows="2" maxlength="2000" placeholder="What success looks like for this activity">{{ modal.form.objective }}</textarea>
+
+            <label for="notes">Internal notes</label>
+            <textarea id="notes" name="notes" rows="3" maxlength="5000" placeholder="Working notes for yourself">{{ modal.form.notes }}</textarea>
           </section>
 
-          <section class="sheet">
+          <section class="sheet" data-offer-root>
             <p class="kicker">Offer detail</p>
-            <p class="fine">Optional tracking for how the discount is set up.</p>
-            <div class="split">
-              <div>
-                <label for="discount_kind">Discount kind</label>
-                <select id="discount_kind" name="discount_kind">
-                  {% for key, label in DISCOUNT_KINDS.items() %}
-                    <option value="{{ key }}" {% if modal.form.discount_kind == key %}selected{% endif %}>{{ label }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label for="discount_value">Amount or rate</label>
-                <input id="discount_value" name="discount_value" type="text" value="{{ modal.form.discount_value }}" maxlength="80" placeholder="15%, 50 CZK, Buy 2 get 1">
+            <p class="fine">Fields change with activity type (aligned to Merchant Center product / cart / shipping discounts).</p>
+            {% set offer = modal.form.offer or {} %}
+
+            <div class="offer-block" data-offer-for="product_discount,cart_discount">
+              <label for="offer_value_mode">Value type</label>
+              <select id="offer_value_mode" name="offer_value_mode" data-offer-value-mode>
+                {% for key, label in VALUE_MODES.items() %}
+                  <option value="{{ key }}" {% if offer.value_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="split" data-offer-relative>
+                <div>
+                  <label for="offer_percent">Percent</label>
+                  <input id="offer_percent" name="offer_percent" type="text" value="{{ offer.percent }}" maxlength="20" placeholder="15">
+                </div>
               </div>
             </div>
+
+            <div class="offer-block" data-offer-for="shipping_discount" hidden>
+              <label for="offer_shipping_mode">Shipping offer</label>
+              <select id="offer_shipping_mode" name="offer_shipping_mode" data-shipping-mode>
+                {% for key, label in SHIPPING_MODES.items() %}
+                  <option value="{{ key }}" {% if offer.shipping_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <label for="offer_shipping_method_note">Shipping methods / notes</label>
+              <input id="offer_shipping_method_note" name="offer_shipping_method_note" type="text" value="{{ offer.shipping_method_note }}" maxlength="200">
+            </div>
+
+            <div class="split" data-offer-money hidden>
+              <div>
+                <label for="offer_amount_czk">Amount CZK</label>
+                <input id="offer_amount_czk" name="offer_amount_czk" type="text" value="{{ offer.amount_czk }}" maxlength="40">
+              </div>
+              <div>
+                <label for="offer_amount_eur">Amount EUR</label>
+                <input id="offer_amount_eur" name="offer_amount_eur" type="text" value="{{ offer.amount_eur }}" maxlength="40">
+              </div>
+            </div>
+
+            <div class="offer-block" data-offer-for="multibuy" hidden>
+              <label for="offer_multibuy_mode">Multibuy mechanic</label>
+              <select id="offer_multibuy_mode" name="offer_multibuy_mode" data-multibuy-mode>
+                {% for key, label in MULTIBUY_MODES.items() %}
+                  <option value="{{ key }}" {% if offer.multibuy_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <div class="split">
+                <div>
+                  <label for="offer_buy_qty">Buy quantity</label>
+                  <input id="offer_buy_qty" name="offer_buy_qty" type="text" value="{{ offer.buy_qty }}" maxlength="20">
+                </div>
+                <div data-multibuy-get-qty>
+                  <label for="offer_get_qty">Get quantity</label>
+                  <input id="offer_get_qty" name="offer_get_qty" type="text" value="{{ offer.get_qty }}" maxlength="20">
+                </div>
+                <div data-multibuy-get-percent hidden>
+                  <label for="offer_get_percent">Get percent off</label>
+                  <input id="offer_get_percent" name="offer_get_percent" type="text" value="{{ offer.get_percent }}" maxlength="20">
+                </div>
+              </div>
+            </div>
+
+            <div class="offer-block" data-offer-for="gift" hidden>
+              <label for="offer_gift_mode">Gift setup</label>
+              <select id="offer_gift_mode" name="offer_gift_mode">
+                {% for key, label in GIFT_MODES.items() %}
+                  <option value="{{ key }}" {% if offer.gift_mode == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <label for="offer_gift_skus">Gift SKU(s)</label>
+              <input id="offer_gift_skus" name="offer_gift_skus" type="text" value="{{ offer.gift_skus }}" maxlength="200" placeholder="One or more SKUs">
+              <div class="split">
+                <div>
+                  <label for="offer_cart_threshold">Cart threshold</label>
+                  <input id="offer_cart_threshold" name="offer_cart_threshold" type="text" value="{{ offer.cart_threshold }}" maxlength="40" placeholder="e.g. 999 CZK">
+                </div>
+                <div>
+                  <label for="offer_max_gifts">Max gifts / order</label>
+                  <input id="offer_max_gifts" name="offer_max_gifts" type="text" value="{{ offer.max_gifts }}" maxlength="20">
+                </div>
+              </div>
+            </div>
+
+            <div class="offer-block" data-offer-for="cart_discount,shipping_discount,multibuy,gift">
+              <label for="offer_cart_predicate_note">Cart predicate note</label>
+              <textarea id="offer_cart_predicate_note" name="offer_cart_predicate_note" rows="2" maxlength="500" placeholder="e.g. totalPrice &gt; 500 OR lineItem count">{{ offer.cart_predicate_note }}</textarea>
+              <label for="offer_sort_order">Cart sort order override</label>
+              <input id="offer_sort_order" name="offer_sort_order" type="text" value="{{ offer.sort_order }}" maxlength="20" placeholder="Blank = Settings default">
+            </div>
+
+            <label for="offer_stacking_note">Stacking note</label>
+            <input id="offer_stacking_note" name="offer_stacking_note" type="text" value="{{ offer.stacking_note }}" maxlength="200">
+
             <label for="product_scope">Product range note</label>
             <textarea id="product_scope" name="product_scope" rows="2" maxlength="2000" placeholder="Category or brand note, if not picking SKUs below">{{ modal.form.product_scope }}</textarea>
 
             <div class="catalog-picker">
               <p class="fine">
                 {% if modal.catalog %}
-                  Tick catalog SKUs for this activity. The Merchant Center checklist uses them for predicates.
+                  Tick catalog SKUs. Stock rows appear below for each selection.
                 {% else %}
                   No catalog yet. <a href="/settings">Import products in Settings</a> to pick SKUs here.
                 {% endif %}
@@ -111,7 +193,7 @@
                   {% set selected = modal.form.scope_skus or [] %}
                   {% for item in modal.catalog %}
                     <label class="catalog-item" data-search="{{ (item.sku ~ ' ' ~ item.name ~ ' ' ~ item.product_key ~ ' ' ~ item.categories) | lower }}">
-                      <input type="checkbox" name="scope_sku" value="{{ item.sku }}" {% if item.sku in selected %}checked{% endif %}>
+                      <input type="checkbox" name="scope_sku" value="{{ item.sku }}" data-sku="{{ item.sku }}" data-sku-name="{{ item.name or item.product_key or item.sku }}" {% if item.sku in selected %}checked{% endif %}>
                       <span>
                         <span class="mono">{{ item.sku }}</span>
                         <span class="fine">{{ item.name or item.product_key or '—' }} · {{ SHOP_SHORT[item.shops] }}</span>
@@ -140,6 +222,52 @@
                 </select>
               </div>
             </div>
+          </section>
+
+          <section class="sheet">
+            <p class="kicker">Stock planning (per SKU)</p>
+            <p class="fine">Ask = units/day × activity days × uplift, unless you set a manual override. Save to refresh the stock pack.</p>
+            <div class="stock-table-wrap">
+              <table class="stock-table" data-stock-table>
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Units/day</th>
+                    <th>Uplift</th>
+                    <th>Ask override</th>
+                  </tr>
+                </thead>
+                <tbody data-stock-body>
+                  {% for line in modal.form.sku_lines or [] %}
+                    <tr data-stock-row="{{ line.sku }}">
+                      <td>
+                        <span class="mono">{{ line.sku }}</span>
+                        <input type="hidden" name="stock_sku" value="{{ line.sku }}">
+                      </td>
+                      <td><input name="stock_units" type="text" value="{{ line.units_per_day }}" maxlength="40"></td>
+                      <td><input name="stock_uplift_line" type="text" value="{{ line.uplift }}" maxlength="40" placeholder="default"></td>
+                      <td><input name="stock_ask" type="text" value="{{ line.ask_override }}" maxlength="40" placeholder="optional"></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              <p class="fine" data-stock-empty {% if modal.form.sku_lines %}hidden{% endif %}>Select SKUs above to plan stock.</p>
+            </div>
+          </section>
+
+          <section class="sheet">
+            <p class="kicker">Assets to prepare</p>
+            <div class="asset-grid">
+              {% set chosen_assets = modal.form.asset_option_keys or [] %}
+              {% for key, label in ASSET_OPTIONS.items() %}
+                <label class="asset-option">
+                  <input type="checkbox" name="asset_option" value="{{ key }}" {% if key in chosen_assets %}checked{% endif %}>
+                  <span>{{ label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <label for="asset_notes">Extra for the agency / content team</label>
+            <textarea id="asset_notes" name="asset_notes" rows="3" maxlength="5000" placeholder="Tone, claims to avoid, deadlines">{{ modal.form.asset_notes }}</textarea>
           </section>
 
           <details class="sheet" {% if modal.form.match_keys or modal.form.baseline_start or modal.form.discount_value or modal.form.product_scope %}open{% endif %}>
@@ -263,27 +391,85 @@
       </div>
 
       <aside class="side">
-        {% if modal.checklist %}
-          <section class="checklist">
+        {% if modal.packs %}
+          {% if modal.packs.warnings %}
+            <section class="pack-warnings">
+              <p class="kicker">Constraints</p>
+              {% for item in modal.packs.warnings %}
+                <p class="pack-alert pack-{{ item.level }}">
+                  <strong>{{ item.title }}</strong>
+                  <span class="fine">{{ item.detail }}</span>
+                </p>
+              {% endfor %}
+            </section>
+          {% endif %}
+
+          <div class="pack-tabs" role="tablist" aria-label="Planning packs">
+            <button type="button" class="pack-tab is-on" data-pack-tab="setup">Setup</button>
+            <button type="button" class="pack-tab" data-pack-tab="stock">Stock</button>
+            <button type="button" class="pack-tab" data-pack-tab="assets">Assets</button>
+            <button type="button" class="pack-tab" data-pack-tab="legal">Legal</button>
+          </div>
+
+          <section class="pack-panel is-on" data-pack-panel="setup">
             <p class="kicker">Merchant Center checklist</p>
-            <p class="fine">{{ modal.checklist.type_label }} · {{ modal.checklist.shops_label }} · {{ modal.checklist.audience_label }}</p>
-            {% if modal.checklist.missing %}
-              <p class="quiet">Still needed in <a href="{{ modal.checklist.settings_href }}">Settings</a>: {{ modal.checklist.missing | join(", ") }}.</p>
+            <p class="fine">{{ modal.packs.checklist.type_label }} · {{ modal.packs.checklist.shops_label }}</p>
+            {% if modal.packs.checklist.missing %}
+              <p class="quiet">Still needed in <a href="{{ modal.packs.checklist.settings_href }}">Settings</a>: {{ modal.packs.checklist.missing | join(", ") }}.</p>
             {% endif %}
-            {% if modal.checklist.predicate and modal.checklist.product_count %}
-              <p class="mono copy-line" title="Predicate">{{ modal.checklist.predicate }}</p>
+            {% if modal.packs.checklist.predicate and modal.packs.checklist.product_count %}
+              <p class="mono copy-line">{{ modal.packs.checklist.predicate }}</p>
             {% endif %}
             <ol class="checklist-steps">
-              {% for step in modal.checklist.steps %}
+              {% for step in modal.packs.checklist.steps %}
                 <li>
                   <p class="checklist-title">{{ step.title }}</p>
                   <p class="fine">{{ step.detail }}</p>
-                  {% if step.copy %}
-                    <p class="mono copy-line">{{ step.copy }}</p>
-                  {% endif %}
+                  {% if step.copy %}<p class="mono copy-line">{{ step.copy }}</p>{% endif %}
                 </li>
               {% endfor %}
             </ol>
+          </section>
+
+          <section class="pack-panel" data-pack-panel="stock" hidden>
+            <p class="kicker">Stock ask</p>
+            <p class="fine">{{ modal.packs.stock.method }}</p>
+            {% if modal.packs.stock.total is not none %}
+              <p class="value-sm">{{ modal.packs.stock.total }} units total</p>
+            {% endif %}
+            {% if modal.packs.stock.lines %}
+              <ul class="pack-list">
+                {% for line in modal.packs.stock.lines %}
+                  <li>
+                    <span class="mono">{{ line.sku }}</span>
+                    <span>{{ line.ask if line.ask is not none else 'TBD' }}</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="fine">Select SKUs and set units/day, then save.</p>
+            {% endif %}
+            <label class="fine" for="stock-copy">Copy for warehouse</label>
+            <textarea id="stock-copy" class="pack-copy" rows="8" readonly>{{ modal.packs.stock.copy_text }}</textarea>
+          </section>
+
+          <section class="pack-panel" data-pack-panel="assets" hidden>
+            <p class="kicker">Asset brief</p>
+            <p class="fine">Copy into a ticket for content / agency. Save the activity after editing objective or notes to refresh.</p>
+            <textarea class="pack-copy" rows="14" readonly>{{ modal.packs.assets.copy_text }}</textarea>
+          </section>
+
+          <section class="pack-panel" data-pack-panel="legal" hidden>
+            <p class="kicker">Legal / compliance</p>
+            <ol class="checklist-steps">
+              {% for item in modal.packs.legal.checks %}
+                <li>
+                  <p class="checklist-title">{{ item.text }}</p>
+                  <p class="fine">{{ item.source }}</p>
+                </li>
+              {% endfor %}
+            </ol>
+            <textarea class="pack-copy" rows="10" readonly>{{ modal.packs.legal.copy_text }}</textarea>
           </section>
         {% endif %}
 
@@ -331,5 +517,86 @@
       });
     });
   }
+  var tabs = dialog.querySelectorAll("[data-pack-tab]");
+  var panels = dialog.querySelectorAll("[data-pack-panel]");
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      var name = tab.getAttribute("data-pack-tab");
+      tabs.forEach(function (item) { item.classList.toggle("is-on", item === tab); });
+      panels.forEach(function (panel) {
+        var on = panel.getAttribute("data-pack-panel") === name;
+        panel.classList.toggle("is-on", on);
+        panel.hidden = !on;
+      });
+    });
+  });
+
+  var typeSelect = dialog.querySelector("#activity_type");
+  var valueMode = dialog.querySelector("[data-offer-value-mode]");
+  var shippingMode = dialog.querySelector("[data-shipping-mode]");
+  var multibuyMode = dialog.querySelector("[data-multibuy-mode]");
+  function syncOfferFields() {
+    var type = typeSelect ? typeSelect.value : "product_discount";
+    dialog.querySelectorAll("[data-offer-for]").forEach(function (block) {
+      var types = (block.getAttribute("data-offer-for") || "").split(",");
+      block.hidden = types.indexOf(type) === -1;
+    });
+    var money = dialog.querySelector("[data-offer-money]");
+    var relative = dialog.querySelector("[data-offer-relative]");
+    var showMoney = false;
+    if (type === "product_discount" || type === "cart_discount") {
+      showMoney = valueMode && valueMode.value === "absolute";
+      if (relative) relative.hidden = !!(valueMode && valueMode.value === "absolute");
+    } else if (type === "shipping_discount") {
+      showMoney = shippingMode && shippingMode.value === "absolute";
+      if (relative) relative.hidden = true;
+    } else if (relative) {
+      relative.hidden = true;
+    }
+    if (money) money.hidden = !showMoney;
+    var getQty = dialog.querySelector("[data-multibuy-get-qty]");
+    var getPct = dialog.querySelector("[data-multibuy-get-percent]");
+    if (getQty && getPct && multibuyMode) {
+      var pct = multibuyMode.value === "buy_x_percent";
+      getQty.hidden = pct;
+      getPct.hidden = !pct;
+    }
+  }
+  if (typeSelect) typeSelect.addEventListener("change", syncOfferFields);
+  if (valueMode) valueMode.addEventListener("change", syncOfferFields);
+  if (shippingMode) shippingMode.addEventListener("change", syncOfferFields);
+  if (multibuyMode) multibuyMode.addEventListener("change", syncOfferFields);
+  syncOfferFields();
+
+  var stockBody = dialog.querySelector("[data-stock-body]");
+  var stockEmpty = dialog.querySelector("[data-stock-empty]");
+  function ensureStockRow(sku, name) {
+    if (!stockBody || !sku) return;
+    if (stockBody.querySelector('[data-stock-row="' + sku.replace(/"/g, '\\"') + '"]')) return;
+    var tr = document.createElement("tr");
+    tr.setAttribute("data-stock-row", sku);
+    tr.innerHTML =
+      '<td><span class="mono"></span><input type="hidden" name="stock_sku" value=""></td>' +
+      '<td><input name="stock_units" type="text" maxlength="40"></td>' +
+      '<td><input name="stock_uplift_line" type="text" maxlength="40" placeholder="default"></td>' +
+      '<td><input name="stock_ask" type="text" maxlength="40" placeholder="optional"></td>';
+    tr.querySelector(".mono").textContent = sku;
+    tr.querySelector('input[name="stock_sku"]').value = sku;
+    stockBody.appendChild(tr);
+    if (stockEmpty) stockEmpty.hidden = true;
+  }
+  function removeStockRow(sku) {
+    if (!stockBody) return;
+    var row = stockBody.querySelector('[data-stock-row="' + sku.replace(/"/g, '\\"') + '"]');
+    if (row) row.remove();
+    if (stockEmpty) stockEmpty.hidden = !!stockBody.querySelector("[data-stock-row]");
+  }
+  if (stockEmpty && stockBody) stockEmpty.hidden = !!stockBody.querySelector("[data-stock-row]");
+  dialog.querySelectorAll('input[name="scope_sku"]').forEach(function (box) {
+    box.addEventListener("change", function () {
+      if (box.checked) ensureStockRow(box.value, box.getAttribute("data-sku-name"));
+      else removeStockRow(box.value);
+    });
+  });
 })();
 </script>
